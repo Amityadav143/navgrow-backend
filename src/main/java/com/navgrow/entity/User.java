@@ -5,6 +5,9 @@ import lombok.*;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 @Entity @Table(name = "users")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class User {
@@ -23,6 +26,7 @@ public class User {
     private String phone;
 
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false)
     private UserRole role = UserRole.USER;
 
