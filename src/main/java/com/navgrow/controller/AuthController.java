@@ -9,6 +9,8 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.*;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -44,7 +46,14 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest req) {
-        authManager.authenticate(new UsernamePasswordAuthenticationToken(req.getEmail(), req.getPassword()));
+    	try {
+    		log.info("Attempting login for email: {}"+req.getEmail()+":- ", req.getPassword());
+    		authManager.authenticate(new UsernamePasswordAuthenticationToken(req.getEmail(), req.getPassword()));
+        } catch (BadCredentialsException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid email or password");
+        }
+    	log.info("Attempting login for email: 2{}"+req.getEmail()+":- "+req.getPassword());
+        //authManager.authenticate(new UsernamePasswordAuthenticationToken(req.getEmail(), req.getPassword()));
         UserDetails ud = uds.loadUserByUsername(req.getEmail());
         String token = jwtUtil.generateToken(ud);
         String refresh = jwtUtil.generateRefreshToken(ud);
