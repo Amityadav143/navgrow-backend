@@ -25,7 +25,7 @@ public class CorsConfig {
         String prop = env.getProperty("app.allowed-origins");
         List<String> allowedOrigins;
         if (prop == null || prop.isBlank()) {
-            allowedOrigins = List.of("http://localhost:5173");
+            allowedOrigins = List.of("https://dev.navgrow.tech","https://www.dev.navgrow.tech","https://navgrow.tech","https://www.navgrow.tech","http://localhost:3000","http://localhost:5173");
         } else {
             // Split on commas and trim entries
             String[] parts = prop.split(",");
@@ -39,7 +39,7 @@ public class CorsConfig {
         config.setAllowedOrigins(allowedOrigins);
         config.setAllowedHeaders(Arrays.asList("*"));
         config.setAllowedMethods(Arrays.asList("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
-        config.setExposedHeaders(Arrays.asList("Authorization","X-Total-Count"));
+        config.setExposedHeaders(Arrays.asList("Authorization","X-Total-Count","Content-Type", "X-Requested-With", "Accept", "Origin"));
         config.setMaxAge(3600L);
         source.registerCorsConfiguration("/**", config);
         return new CorsFilter(source);
