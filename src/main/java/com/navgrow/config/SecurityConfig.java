@@ -42,11 +42,16 @@ public class SecurityConfig {
     };
 
     private static final String[] PUBLIC_GET_EXTRA = {
-        "/chat/starters"
+        "/chat/starters", "/site-settings"
     };
 
     private static final String[] PUBLIC_ANY = {
         "/orders/track/**"
+    };
+
+    // EDITOR + ADMIN + MANAGER can manage content
+    private static final String[] CONTENT_PATHS = {
+        "/news/**", "/projects/**", "/gallery/**", "/tenders/**", "/jobs/**"
     };
 
     @Bean
@@ -56,11 +61,24 @@ public class SecurityConfig {
             .cors(cors -> {})
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers(HttpMethod.GET,  PUBLIC_GET).permitAll()
-                .requestMatchers(HttpMethod.GET,  PUBLIC_GET_EXTRA).permitAll()
+                .requestMatchers(HttpMethod.GET, PUBLIC_GET).permitAll()
+                .requestMatchers(HttpMethod.GET, PUBLIC_GET_EXTRA).permitAll()
                 .requestMatchers(HttpMethod.POST, PUBLIC_POST).permitAll()
                 .requestMatchers(PUBLIC_ANY).permitAll()
-                .requestMatchers("/admin/**").hasAnyRole("ADMIN", "MANAGER")
+                // EDITOR can manage content + site settings
+                .requestMatchers(HttpMethod.POST,   "/news/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
+                .requestMatchers(HttpMethod.PUT,    "/news/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
+                .requestMatchers(HttpMethod.DELETE, "/news/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
+                .requestMatchers(HttpMethod.POST,   "/projects/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
+                .requestMatchers(HttpMethod.PUT,    "/projects/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
+                .requestMatchers(HttpMethod.POST,   "/gallery/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
+                .requestMatchers(HttpMethod.PUT,    "/gallery/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
+                .requestMatchers(HttpMethod.GET,    "/site-settings/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
+                .requestMatchers(HttpMethod.PUT,    "/site-settings/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
+                .requestMatchers(HttpMethod.POST,   "/site-settings/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
+                // Only ADMIN manages orders, coupons, users
+                .requestMatchers("/admin/**").hasAnyRole("ADMIN","MANAGER")
+                .requestMatchers("/coupons/**").hasAnyRole("ADMIN","MANAGER")
                 .anyRequest().authenticated()
             )
             .userDetailsService(userDetailsService)
@@ -68,13 +86,10 @@ public class SecurityConfig {
             .build();
     }
 
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(12);
-    }
+    @Bean public PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(12); }
 
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
-        return config.getAuthenticationManager();
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration c) throws Exception {
+        return c.getAuthenticationManager();
     }
 }
