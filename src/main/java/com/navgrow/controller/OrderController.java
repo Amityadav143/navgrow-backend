@@ -1,3 +1,7 @@
+/*
+ * © 2024–2025 Navgrow Engineering Service Pvt. Ltd. All rights reserved.
+ * CIN: U74999WB2022PTC256012 · navgrow.org
+ */
 package com.navgrow.controller;
 import com.navgrow.entity.*;
 import com.navgrow.enums.*;
@@ -13,6 +17,8 @@ import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.data.domain.*;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -32,6 +38,7 @@ public class OrderController {
     private final RazorpayClient razorpayClient;
     private final OrderNumberGenerator orderNumGen;
     private final EmailService emailService;
+    private final com.navgrow.service.InvoiceService invoiceService;
 
     @Value("${razorpay.key-secret}")
     private String razorpaySecret;
@@ -51,6 +58,7 @@ public class OrderController {
         @Email @NotBlank String customerEmail;
         @NotBlank String customerPhone;
         String companyName;
+        String gstin;
         @NotBlank String addressLine1;
         String addressLine2;
         @NotBlank String city;
@@ -100,6 +108,7 @@ public class OrderController {
             .orderNumber(orderNumGen.generate())
             .customerName(req.getCustomerName()).customerEmail(req.getCustomerEmail())
             .customerPhone(req.getCustomerPhone()).companyName(req.getCompanyName())
+            .gstin(req.getGstin())
             .addressLine1(req.getAddressLine1()).addressLine2(req.getAddressLine2())
             .city(req.getCity()).state(req.getState()).pincode(req.getPincode())
             .subtotal(subtotal).gstAmount(gstAmount)
@@ -189,7 +198,37 @@ public class OrderController {
         }
     }
 
+    // ── User: my orders ─────────────────────────────────────────────────────
+    @GetMapping("/mine")
+    public ResponseEntity<Page<Order>> myOrders(
+            @AuthenticationPrincipal UserDetails ud,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+        return ResponseEntity.ok(
+            orderRepo.findByCustomerEmailOrderByCreatedAtDesc(ud.getUsername(), pageable));
+    }
+
     // ── Admin endpoints ─────────────────────────────────────────────────────
+    // ── GST tax invoice (print-ready HTML → browser saves as PDF) ─────────────
+    @GetMapping(value = "/{orderNumber}/invoice", produces = "text/html")
+    public ResponseEntity<String> invoice(@PathVariable String orderNumber) {
+        Order order = orderRepo.findByOrderNumber(orderNumber)
+            .orElseThrow(() -> new com.navgrow.exception.ResourceNotFoundException("Order", orderNumber));
+        // Only allow invoice once payment is captured
+        if (order.getPaymentStatus() == null
+                || order.getPaymentStatus() == com.navgrow.enums.PaymentStatus.PENDING) {
+            return ResponseEntity.badRequest()
+                .body("<html><body style='font-family:sans-serif;padding:40px'>"
+                    + "<h2>Invoice not available yet</h2>"
+                    + "<p>An invoice is generated once payment is confirmed.</p></body></html>");
+        }
+        String html = invoiceService.generateInvoiceHtml(order);
+        return ResponseEntity.ok()
+            .header("Content-Type", "text/html; charset=UTF-8")
+            .body(html);
+    }
+
     @GetMapping
     @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
     public ResponseEntity<Page<Order>> listOrders(

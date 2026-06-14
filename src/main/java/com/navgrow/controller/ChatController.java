@@ -1,3 +1,7 @@
+/*
+ * © 2024–2025 Navgrow Engineering Service Pvt. Ltd. All rights reserved.
+ * CIN: U74999WB2022PTC256012 · navgrow.org
+ */
 package com.navgrow.controller;
 
 import com.navgrow.service.ChatService;

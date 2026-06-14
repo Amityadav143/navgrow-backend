@@ -1,3 +1,10 @@
+/*
+ * © 2024–2025 Navgrow Engineering Service Pvt. Ltd. All rights reserved.
+ * CIN: U74999WB2022PTC256012 | navgrow.org | info@navgrow.org
+ *
+ * PROPRIETARY & CONFIDENTIAL — Navgrow Engineering Platform v1.0
+ * Unauthorised copying or distribution is strictly prohibited.
+ */
 package com.navgrow.controller;
 import com.navgrow.entity.GalleryItem;
 import com.navgrow.exception.ResourceNotFoundException;
@@ -34,6 +41,20 @@ public class GalleryController {
             .imageUrl(req.getImageUrl()).altText(req.getAltText())
             .sortOrder(req.getSortOrder()).build();
         return ResponseEntity.status(201).body(repo.save(item));
+    }
+
+    @PutMapping("/{id}") @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<GalleryItem> update(@PathVariable UUID id, @Valid @RequestBody GalleryReq req) {
+        GalleryItem item = repo.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("GalleryItem", id.toString()));
+        item.setTitle(req.getTitle());
+        if (req.getCategory() != null) item.setCategory(req.getCategory());
+        if (req.getLocation()  != null) item.setLocation(req.getLocation());
+        if (req.getYear()      != null) item.setYear(req.getYear());
+        item.setImageUrl(req.getImageUrl());
+        if (req.getAltText()   != null) item.setAltText(req.getAltText());
+        item.setSortOrder(req.getSortOrder());
+        return ResponseEntity.ok(repo.save(item));
     }
 
     @DeleteMapping("/{id}") @PreAuthorize("hasRole('ADMIN')")

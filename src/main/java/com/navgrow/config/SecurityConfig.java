@@ -1,3 +1,10 @@
+/*
+ * © 2024–2025 Navgrow Engineering Service Pvt. Ltd. All rights reserved.
+ * CIN: U74999WB2022PTC256012 | navgrow.org | info@navgrow.org
+ *
+ * PROPRIETARY & CONFIDENTIAL — Navgrow Engineering Platform v1.0
+ * Unauthorised copying or distribution is strictly prohibited.
+ */
 package com.navgrow.config;
 
 import com.navgrow.security.JwtAuthFilter;
@@ -36,7 +43,7 @@ public class SecurityConfig {
 
     private static final String[] PUBLIC_POST = {
         "/auth/**", "/contact", "/newsletter/**",
-        "/quotes", "/orders/payment/verify",
+        "/quotes", "/orders", "/orders/payment/verify", "/rfqs",
         "/jobs/*/apply", "/products/*/reviews",
         "/chat"
     };
@@ -46,7 +53,7 @@ public class SecurityConfig {
     };
 
     private static final String[] PUBLIC_ANY = {
-        "/orders/track/**"
+        "/orders/track/**", "/orders/*/invoice", "/rfqs/track/**", "/rfqs/*/accept", "/rfqs/*/reject"
     };
 
     // EDITOR + ADMIN + MANAGER can manage content

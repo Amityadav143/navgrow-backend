@@ -1,3 +1,10 @@
+/*
+ * © 2024–2025 Navgrow Engineering Service Pvt. Ltd. All rights reserved.
+ * CIN: U74999WB2022PTC256012 | navgrow.org | info@navgrow.org
+ *
+ * PROPRIETARY & CONFIDENTIAL — Navgrow Engineering Platform v1.0
+ * Unauthorised copying or distribution is strictly prohibited.
+ */
 package com.navgrow.controller;
 import com.navgrow.entity.*;
 import com.navgrow.enums.*;
@@ -46,6 +53,34 @@ public class JobController {
             .description(req.getDescription()).skills(req.getSkills())
             .status(req.getStatus() != null ? req.getStatus() : JobStatus.OPEN).build();
         return ResponseEntity.status(201).body(jobRepo.save(j));
+    }
+
+    @PutMapping("/{id}") @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<JobListing> update(@PathVariable UUID id, @Valid @RequestBody JobReq req) {
+        JobListing j = jobRepo.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("Job", id.toString()));
+        j.setTitle(req.getTitle()); j.setDepartment(req.getDepartment());
+        j.setLocation(req.getLocation());
+        if (req.getJobType()    != null) j.setJobType(req.getJobType());
+        if (req.getExperience() != null) j.setExperience(req.getExperience());
+        j.setDescription(req.getDescription());
+        if (req.getSkills()     != null) j.setSkills(req.getSkills());
+        if (req.getStatus()     != null) j.setStatus(req.getStatus());
+        return ResponseEntity.ok(jobRepo.save(j));
+    }
+
+    @PatchMapping("/{id}/toggle") @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<JobListing> toggle(@PathVariable UUID id) {
+        JobListing j = jobRepo.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("Job", id.toString()));
+        j.setStatus(j.getStatus() == JobStatus.OPEN ? JobStatus.CLOSED : JobStatus.OPEN);
+        return ResponseEntity.ok(jobRepo.save(j));
+    }
+
+    @DeleteMapping("/{id}") @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        jobRepo.deleteById(id);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{jobId}/apply")

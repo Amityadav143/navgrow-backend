@@ -1,3 +1,10 @@
+/*
+ * © 2024–2025 Navgrow Engineering Service Pvt. Ltd. All rights reserved.
+ * CIN: U74999WB2022PTC256012 | navgrow.org | info@navgrow.org
+ *
+ * PROPRIETARY & CONFIDENTIAL — Navgrow Engineering Platform v1.0
+ * Unauthorised copying or distribution is strictly prohibited.
+ */
 package com.navgrow.controller;
 import com.navgrow.entity.Order;
 import com.navgrow.exception.ResourceNotFoundException;
@@ -39,14 +46,4 @@ public class OrderTrackController {
         ));
     }
 
-    @GetMapping("/mine")
-    public ResponseEntity<?> myOrders(
-            @org.springframework.security.core.annotation.AuthenticationPrincipal org.springframework.security.core.userdetails.UserDetails ud,
-            @RequestParam(defaultValue="0") int page,
-            @RequestParam(defaultValue="10") int size) {
-        return ResponseEntity.ok(repo.findByCustomerEmailOrderByCreatedAtDesc(
-            ud.getUsername(),
-            org.springframework.data.domain.PageRequest.of(page, size,
-                org.springframework.data.domain.Sort.by("createdAt").descending())));
-    }
 }

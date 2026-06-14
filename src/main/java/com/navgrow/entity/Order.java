@@ -1,3 +1,10 @@
+/*
+ * © 2024–2025 Navgrow Engineering Service Pvt. Ltd. All rights reserved.
+ * CIN: U74999WB2022PTC256012 | navgrow.org | info@navgrow.org
+ *
+ * PROPRIETARY & CONFIDENTIAL — Navgrow Engineering Platform v1.0
+ * Unauthorised copying or distribution is strictly prohibited.
+ */
 package com.navgrow.entity;
 import com.navgrow.enums.OrderStatus;
 import com.navgrow.enums.PaymentStatus;
@@ -26,6 +33,8 @@ public class Order {
     @Column(name = "customer_email", nullable = false) private String customerEmail;
     @Column(name = "customer_phone", nullable = false) private String customerPhone;
     @Column(name = "company_name")   private String companyName;
+    @Column(name = "gstin")          private String gstin;
+    @Column(name = "invoice_number") private String invoiceNumber;
 
     @Column(name = "address_line1", nullable = false, columnDefinition = "TEXT") private String addressLine1;
     @Column(name = "address_line2", columnDefinition = "TEXT") private String addressLine2;

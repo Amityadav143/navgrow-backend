@@ -1,3 +1,10 @@
+/*
+ * © 2024–2025 Navgrow Engineering Service Pvt. Ltd. All rights reserved.
+ * CIN: U74999WB2022PTC256012 | navgrow.org | info@navgrow.org
+ *
+ * PROPRIETARY & CONFIDENTIAL — Navgrow Engineering Platform v1.0
+ * Unauthorised copying or distribution is strictly prohibited.
+ */
 package com.navgrow.controller;
 import com.navgrow.entity.ContactMessage;
 import com.navgrow.exception.ResourceNotFoundException;
@@ -67,5 +74,25 @@ public class ContactController {
     @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
     public ResponseEntity<Map<String, Long>> unreadCount() {
         return ResponseEntity.ok(Map.of("count", repo.countUnread()));
+    }
+
+    @Data
+    public static class ReplyRequest {
+        @NotBlank String message;
+    }
+
+    @PostMapping("/{id}/reply")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    public ResponseEntity<Map<String, String>> reply(
+            @PathVariable UUID id,
+            @Valid @RequestBody ReplyRequest req) {
+        ContactMessage msg = repo.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("ContactMessage", id.toString()));
+        // Send reply email
+        emailService.sendReplyEmail(msg.getEmail(), msg.getName(), msg.getSubject(), req.getMessage());
+        // Mark as read
+        msg.setRead(true);
+        repo.save(msg);
+        return ResponseEntity.ok(Map.of("message", "Reply sent successfully."));
     }
 }

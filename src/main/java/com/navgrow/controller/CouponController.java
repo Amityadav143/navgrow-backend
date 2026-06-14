@@ -1,3 +1,10 @@
+/*
+ * © 2024–2025 Navgrow Engineering Service Pvt. Ltd. All rights reserved.
+ * CIN: U74999WB2022PTC256012 | navgrow.org | info@navgrow.org
+ *
+ * PROPRIETARY & CONFIDENTIAL — Navgrow Engineering Platform v1.0
+ * Unauthorised copying or distribution is strictly prohibited.
+ */
 package com.navgrow.controller;
 import com.navgrow.entity.Coupon;
 import com.navgrow.exception.BadRequestException;
@@ -21,7 +28,7 @@ public class CouponController {
         @NotBlank String code;
         String description;
         Coupon.CouponType couponType;
-        @NotNull @Positive BigDecimal value;
+        @NotNull @PositiveOrZero BigDecimal value;  // 0 is valid for FREE_SHIP coupons
         BigDecimal minOrderAmount;
         BigDecimal maxDiscount;
         Integer usageLimit;
@@ -52,6 +59,28 @@ public class CouponController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<Coupon>> list() { return ResponseEntity.ok(repo.findAll()); }
 
+    @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Coupon> update(@PathVariable UUID id, @Valid @RequestBody CouponReq req) {
+        Coupon c = repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Coupon not found"));
+        c.setCode(req.getCode().toUpperCase());
+        c.setDescription(req.getDescription());
+        c.setCouponType(req.getCouponType());
+        c.setValue(req.getValue());
+        if (req.getMinOrderAmount() != null) c.setMinOrderAmount(req.getMinOrderAmount());
+        c.setMaxDiscount(req.getMaxDiscount());
+        c.setUsageLimit(req.getUsageLimit());
+        if (req.getValidFrom() != null) c.setValidFrom(req.getValidFrom());
+        c.setValidUntil(req.getValidUntil());
+        return ResponseEntity.ok(repo.save(c));
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        repo.deleteById(id); return ResponseEntity.noContent().build();
+    }
+
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Coupon> create(@Valid @RequestBody CouponReq req) {
@@ -79,7 +108,4 @@ public class CouponController {
         return ResponseEntity.ok(repo.save(c));
     }
 
-    @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> delete(@PathVariable UUID id) { repo.deleteById(id); return ResponseEntity.noContent().build(); }
 }

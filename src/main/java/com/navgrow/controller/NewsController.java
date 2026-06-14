@@ -1,3 +1,10 @@
+/*
+ * © 2024–2025 Navgrow Engineering Service Pvt. Ltd. All rights reserved.
+ * CIN: U74999WB2022PTC256012 | navgrow.org | info@navgrow.org
+ *
+ * PROPRIETARY & CONFIDENTIAL — Navgrow Engineering Platform v1.0
+ * Unauthorised copying or distribution is strictly prohibited.
+ */
 package com.navgrow.controller;
 import com.navgrow.entity.NewsArticle;
 import com.navgrow.enums.NewsStatus;
@@ -8,6 +15,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import lombok.*;
 import org.springframework.data.domain.*;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -28,11 +36,20 @@ public class NewsController {
 
     @GetMapping public ResponseEntity<Page<NewsArticle>> list(
             @RequestParam(defaultValue="0") int page, @RequestParam(defaultValue="12") int size,
-            @RequestParam(required=false) String category) {
-        Pageable p = PageRequest.of(page, size);
+            @RequestParam(required=false) String category,
+            @RequestParam(required=false) String q,
+            @RequestParam(required=false) NewsStatus status) {
+        // Default to PUBLISHED for public endpoint; admin can pass DRAFT/ALL
+        NewsStatus effectiveStatus = status != null ? status : NewsStatus.PUBLISHED;
+        Pageable p = PageRequest.of(page, size, Sort.by("publishedAt").descending());
+        if (q != null && !q.isBlank()) {
+            // Text search across title and excerpt
+            return ResponseEntity.ok(repo.findByStatusAndTitleContainingIgnoreCaseOrStatusAndExcerptContainingIgnoreCase(
+                effectiveStatus, q, effectiveStatus, q, p));
+        }
         return ResponseEntity.ok(category != null
-            ? repo.findByCategoryAndStatusOrderByPublishedAtDesc(category, NewsStatus.PUBLISHED, p)
-            : repo.findByStatusOrderByPublishedAtDesc(NewsStatus.PUBLISHED, p));
+            ? repo.findByCategoryAndStatusOrderByPublishedAtDesc(category, effectiveStatus, p)
+            : repo.findByStatusOrderByPublishedAtDesc(effectiveStatus, p));
     }
 
     @GetMapping("/{slug}") public ResponseEntity<NewsArticle> get(@PathVariable String slug) {
