@@ -23,7 +23,7 @@ public class JobListing {
 
     @Column(nullable = false) private String title;
     @Column(nullable = false) private String department;
-    @Column(name = "job_type") private String jobType = "Full-time";
+    @Builder.Default @Column(name = "job_type") private String jobType = "Full-time";
     @Column(nullable = false) private String location;
     private String experience;
     @Column(nullable = false, columnDefinition = "TEXT") private String description;
@@ -32,10 +32,16 @@ public class JobListing {
     @Column(columnDefinition = "text[]")
     private List<String> skills;
 
-    @Enumerated(EnumType.STRING) @Column(nullable = false)
+    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.NAMED_ENUM) @Column(nullable = false)
+    @Builder.Default
     private JobStatus status = JobStatus.OPEN;
 
-    @Column(name = "created_at", updatable = false) private LocalDateTime createdAt = LocalDateTime.now();
-    @Column(name = "updated_at") private LocalDateTime updatedAt = LocalDateTime.now();
+    @Builder.Default @Column(name = "created_at", updatable = false) private LocalDateTime createdAt = LocalDateTime.now();
+    @Builder.Default @Column(name = "updated_at") private LocalDateTime updatedAt = LocalDateTime.now();
     @PreUpdate public void preUpdate() { this.updatedAt = LocalDateTime.now(); }
+
+    @PrePersist
+    public void prePersist() {
+        if (createdAt == null) createdAt = LocalDateTime.now();
+    }
 }

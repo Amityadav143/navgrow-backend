@@ -9,15 +9,27 @@ package com.navgrow.util;
 import org.springframework.stereotype.Component;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
 public class OrderNumberGenerator {
-    private final AtomicInteger counter = new AtomicInteger(1);
-    private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
+    // Rolling in-process counter for readability within a run...
+    private final AtomicInteger counter = new AtomicInteger(ThreadLocalRandom.current().nextInt(1000));
+    private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
+    /**
+     * Format: NGO-{yyyyMMddHHmmss}-{seq}{rand}
+     * The timestamp (to the second) plus an in-process sequence plus a random
+     * tail make collisions effectively impossible — even across application
+     * restarts (which reset the counter) or multiple running instances. This
+     * matters because order_number carries a UNIQUE constraint, so a collision
+     * would otherwise fail the order with a constraint violation.
+     */
     public String generate() {
-        return "NGO-" + LocalDateTime.now().format(FMT) + "-" +
-               String.format("%04d", counter.getAndIncrement());
+        int seq  = counter.getAndIncrement() % 1000;
+        int rand = ThreadLocalRandom.current().nextInt(100, 1000);
+        return "NGO-" + LocalDateTime.now().format(FMT) + "-"
+             + String.format("%03d%03d", seq, rand);
     }
 }

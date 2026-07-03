@@ -9,6 +9,8 @@ package com.navgrow.entity;
 import com.navgrow.enums.ApplicationStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -30,10 +32,16 @@ public class JobApplication {
     @Column(name = "cover_note", columnDefinition = "TEXT") private String coverNote;
     @Column(name = "resume_url") private String resumeUrl;
 
-    @Enumerated(EnumType.STRING) @Column(nullable = false)
+    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.NAMED_ENUM) @Column(nullable = false)
+    @Builder.Default
     private ApplicationStatus status = ApplicationStatus.NEW;
 
-    @Column(name = "created_at", updatable = false) private LocalDateTime createdAt = LocalDateTime.now();
-    @Column(name = "updated_at") private LocalDateTime updatedAt = LocalDateTime.now();
+    @Builder.Default @Column(name = "created_at", updatable = false) private LocalDateTime createdAt = LocalDateTime.now();
+    @Builder.Default @Column(name = "updated_at") private LocalDateTime updatedAt = LocalDateTime.now();
     @PreUpdate public void preUpdate() { this.updatedAt = LocalDateTime.now(); }
+
+    @PrePersist
+    public void prePersist() {
+        if (createdAt == null) createdAt = LocalDateTime.now();
+    }
 }

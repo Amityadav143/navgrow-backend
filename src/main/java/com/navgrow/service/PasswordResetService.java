@@ -25,6 +25,7 @@ public class PasswordResetService {
     private final UserRepository              userRepo;
     private final PasswordResetTokenRepository tokenRepo;
     private final EmailService                emailService;
+    private final SmsService                  smsService;
     private final PasswordEncoder             encoder;
 
     @Transactional
@@ -55,6 +56,13 @@ public class PasswordResetService {
         userRepo.save(user);
         prt.setUsed(true);
         tokenRepo.save(prt);
+        // Security notification SMS (best-effort) — alerts the user their password changed.
+        if (user.getPhone() != null && !user.getPhone().isBlank()) {
+            try {
+                smsService.send(user.getPhone(),
+                    "Your Navgrow account password was just changed. If this wasn't you, contact us immediately at +918927070972.");
+            } catch (Exception ignored) { /* never block the reset */ }
+        }
         log.info("Password reset successful for: {}", user.getEmail());
     }
 }

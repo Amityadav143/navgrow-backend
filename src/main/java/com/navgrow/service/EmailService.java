@@ -229,6 +229,53 @@ public class EmailService {
         }
     }
 
+    /**
+     * Notify the Navgrow team when a buyer accepts or rejects a quote, so the
+     * team knows to follow up (accept) or can capture the lost-deal reason (reject).
+     * Best-effort: never throws.
+     */
+    @Async
+    public void sendRfqDecisionToTeam(String rfqNumber, String buyerName, String buyerEmail,
+                                      String buyerPhone, boolean accepted, String total, String reason) {
+        try {
+            var mime = mailSender.createMimeMessage();
+            var helper = new org.springframework.mail.javamail.MimeMessageHelper(mime, true, "UTF-8");
+            helper.setFrom(fromEmail);
+            helper.setTo(contactEmail);
+            if (buyerEmail != null && !buyerEmail.isBlank()) helper.setReplyTo(buyerEmail);
+            String verb = accepted ? "ACCEPTED" : "REJECTED";
+            String accent = accepted ? "#059669" : "#dc2626";
+            helper.setSubject("Quote " + verb + ": " + rfqNumber + (accepted ? " — action needed" : ""));
+            StringBuilder html = new StringBuilder()
+                .append("<div style='font-family:Inter,Arial,sans-serif;max-width:560px;margin:auto'>")
+                .append("<h2 style='color:").append(accent).append("'>Quote ").append(verb).append("</h2>")
+                .append("<p>RFQ <strong>").append(safe(rfqNumber)).append("</strong> has been ")
+                .append(accepted ? "accepted by the buyer." : "rejected by the buyer.").append("</p>")
+                .append("<table style='width:100%;border-collapse:collapse;margin:12px 0'>")
+                .append("<tr><td style='padding:6px;color:#64748b'>Buyer</td><td style='padding:6px;text-align:right;font-weight:600'>")
+                .append(safe(buyerName)).append("</td></tr>")
+                .append("<tr><td style='padding:6px;color:#64748b'>Email</td><td style='padding:6px;text-align:right'>")
+                .append(safe(buyerEmail)).append("</td></tr>")
+                .append("<tr><td style='padding:6px;color:#64748b'>Phone</td><td style='padding:6px;text-align:right'>")
+                .append(safe(buyerPhone)).append("</td></tr>")
+                .append("<tr><td style='padding:6px;color:#64748b'>Quote Total</td><td style='padding:6px;text-align:right;font-weight:700'>₹")
+                .append(safe(total)).append("</td></tr>");
+            if (!accepted && reason != null && !reason.isBlank()) {
+                html.append("<tr><td style='padding:6px;color:#64748b'>Reason</td><td style='padding:6px;text-align:right'>")
+                    .append(safe(reason)).append("</td></tr>");
+            }
+            html.append("</table>");
+            if (accepted) {
+                html.append("<p style='font-weight:600'>Please reach out to the buyer to finalise the order.</p>");
+            }
+            html.append("<p style='color:#64748b;font-size:13px;margin-top:20px'>Navgrow Engineering — admin notification</p></div>");
+            helper.setText(html.toString(), true);
+            mailSender.send(mime);
+        } catch (Exception e) {
+            log.warn("Failed to send RFQ decision notification: {}", e.getMessage());
+        }
+    }
+
     private String safe(String s) { return s == null ? "" : s.replaceAll("[<>]", ""); }
 
 }

@@ -24,7 +24,8 @@ public class ProjectController {
     private final SlugUtil slugUtil;
 
     @Data public static class ProjectReq {
-        @NotBlank String title, category;
+        @NotBlank String title;
+        String category;
         String client, location, year, description, imageUrl;
         boolean featured;
         int sortOrder;
@@ -40,7 +41,8 @@ public class ProjectController {
     @PostMapping @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Project> create(@Valid @RequestBody ProjectReq req) {
         String slug = slugUtil.uniqueSlug(req.getTitle(), s -> repo.findBySlug(s).isPresent());
-        Project p = Project.builder().title(req.getTitle()).slug(slug).category(req.getCategory())
+        String cat = (req.getCategory() == null || req.getCategory().isBlank()) ? "General" : req.getCategory();
+        Project p = Project.builder().title(req.getTitle()).slug(slug).category(cat)
             .client(req.getClient()).location(req.getLocation()).year(req.getYear())
             .description(req.getDescription()).imageUrl(req.getImageUrl())
             .featured(req.isFeatured()).sortOrder(req.getSortOrder()).build();
@@ -50,7 +52,7 @@ public class ProjectController {
     @PutMapping("/{id}") @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Project> update(@PathVariable UUID id, @Valid @RequestBody ProjectReq req) {
         Project p = repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Project", id.toString()));
-        p.setTitle(req.getTitle()); p.setCategory(req.getCategory());
+        p.setTitle(req.getTitle()); p.setCategory((req.getCategory()==null||req.getCategory().isBlank())?"General":req.getCategory());
         p.setClient(req.getClient()); p.setLocation(req.getLocation()); p.setYear(req.getYear());
         p.setDescription(req.getDescription()); p.setImageUrl(req.getImageUrl());
         p.setFeatured(req.isFeatured()); p.setSortOrder(req.getSortOrder());

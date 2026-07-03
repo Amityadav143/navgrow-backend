@@ -23,6 +23,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -48,13 +49,14 @@ public class RfqController {
 
     private final RfqRepository repo;
     private final EmailService emailService;
+    private final com.navgrow.service.SmsService smsService;
 
-    private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("yyyyMMdd");
+
 
     // ── DTOs ──────────────────────────────────────────────────────────────────
     @Data
     public static class RfqItemReq {
-        private UUID productId;
+        private String productId;  // accepts catalogue UUID or static product id
         @NotBlank private String productName;
         private String sku;
         @NotNull @Min(1) private Integer quantity;
@@ -112,7 +114,7 @@ public class RfqController {
 
         for (RfqItemReq it : req.getItems()) {
             rfq.addItem(RfqItem.builder()
-                .productId(it.getProductId())
+                .productId(parseUuidOrNull(it.getProductId()))
                 .productName(it.getProductName())
                 .sku(it.getSku())
                 .quantity(it.getQuantity())
@@ -124,6 +126,11 @@ public class RfqController {
         Rfq saved = repo.save(rfq);
         emailService.sendRfqAcknowledgement(saved.getBuyerEmail(), saved.getBuyerName(),
                 saved.getRfqNumber(), saved.getItems().size());
+        try {
+            smsService.send(saved.getBuyerPhone(),
+                "Navgrow received your quote request " + saved.getRfqNumber() +
+                ". We'll send a formal quote within 1 business day. Track at navgrow.org/saved-quotes");
+        } catch (Exception ignored) { /* SMS best-effort */ }
 
         Map<String, String> body = new HashMap<>();
         body.put("rfqNumber", saved.getRfqNumber());
@@ -156,8 +163,22 @@ public class RfqController {
         Rfq rfq = getOr404(id);
         if (rfq.getStatus() != RfqStatus.QUOTED)
             return ResponseEntity.badRequest().body(Map.of("message", "Only a quoted RFQ can be accepted."));
+        // Reject acceptance of an expired quote so pricing can't be locked in after validity.
+        if (rfq.getQuoteValidUntil() != null && LocalDateTime.now().isAfter(rfq.getQuoteValidUntil())) {
+            rfq.setStatus(RfqStatus.EXPIRED);
+            repo.save(rfq);
+            return ResponseEntity.badRequest().body(Map.of("message",
+                "This quote expired on " + rfq.getQuoteValidUntil().toLocalDate()
+                + ". Please request a fresh quote and we'll be happy to help."));
+        }
         rfq.setStatus(RfqStatus.ACCEPTED);
         repo.save(rfq);
+        // Notify the team so they can follow up and finalise the order.
+        try {
+            emailService.sendRfqDecisionToTeam(rfq.getRfqNumber(), rfq.getBuyerName(),
+                rfq.getBuyerEmail(), rfq.getBuyerPhone(), true,
+                rfq.getQuotedTotal() != null ? rfq.getQuotedTotal().toPlainString() : "-", null);
+        } catch (Exception ignored) { /* notification is best-effort */ }
         return ResponseEntity.ok(Map.of("message", "Quote accepted. Our team will reach out to finalise the order."));
     }
 
@@ -165,11 +186,22 @@ public class RfqController {
     public ResponseEntity<Map<String, String>> reject(@PathVariable UUID id,
                                                        @RequestBody(required = false) Map<String, String> body) {
         Rfq rfq = getOr404(id);
+        if (rfq.getStatus() != RfqStatus.QUOTED)
+            return ResponseEntity.badRequest().body(Map.of("message", "Only a quoted RFQ can be rejected."));
         rfq.setStatus(RfqStatus.REJECTED);
-        if (body != null && body.get("reason") != null)
-            rfq.setAdminMessage("Buyer rejected: " + body.get("reason"));
+        String reason = (body != null) ? body.get("reason") : null;
+        // Keep the buyer's reason in the notes field, preserving the admin's original quote message.
+        if (reason != null && !reason.isBlank()) {
+            String existing = rfq.getNotes() != null ? rfq.getNotes() + "\n" : "";
+            rfq.setNotes(existing + "Buyer rejection reason: " + reason);
+        }
         repo.save(rfq);
-        return ResponseEntity.ok(Map.of("message", "Quote rejected."));
+        try {
+            emailService.sendRfqDecisionToTeam(rfq.getRfqNumber(), rfq.getBuyerName(),
+                rfq.getBuyerEmail(), rfq.getBuyerPhone(), false,
+                rfq.getQuotedTotal() != null ? rfq.getQuotedTotal().toPlainString() : "-", reason);
+        } catch (Exception ignored) { /* notification is best-effort */ }
+        return ResponseEntity.ok(Map.of("message", "Quote rejected. Thank you for letting us know."));
     }
 
     // ── Admin: list ───────────────────────────────────────────────────────────
@@ -210,17 +242,20 @@ public class RfqController {
             int gstRate = line.getGstRate() != null ? line.getGstRate()
                         : (it.getGstRate() != null ? it.getGstRate() : 18);
             BigDecimal lineTotal = line.getUnitPrice()
-                .multiply(BigDecimal.valueOf(it.getQuantity()));
+                .multiply(BigDecimal.valueOf(it.getQuantity()))
+                .setScale(2, RoundingMode.HALF_UP);
             it.setQuotedUnitPrice(line.getUnitPrice());
             it.setLineTotal(lineTotal);
             it.setGstRate(gstRate);
             subtotal = subtotal.add(lineTotal);
             gstTotal = gstTotal.add(lineTotal.multiply(BigDecimal.valueOf(gstRate))
-                        .divide(BigDecimal.valueOf(100)));
+                        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));
         }
 
         BigDecimal shipping = req.getShipping() != null ? req.getShipping() : BigDecimal.ZERO;
-        BigDecimal total = subtotal.add(gstTotal).add(shipping);
+        subtotal = subtotal.setScale(2, RoundingMode.HALF_UP);
+        gstTotal = gstTotal.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal total = subtotal.add(gstTotal).add(shipping).setScale(2, RoundingMode.HALF_UP);
         int validity = req.getValidityDays() != null ? req.getValidityDays() : 15;
 
         rfq.setQuotedSubtotal(subtotal);
@@ -237,6 +272,11 @@ public class RfqController {
         emailService.sendRfqQuoted(saved.getBuyerEmail(), saved.getBuyerName(),
                 saved.getRfqNumber(), total.toPlainString(),
                 saved.getQuoteValidUntil().toLocalDate().toString());
+        try {
+            smsService.send(saved.getBuyerPhone(),
+                "Your Navgrow quote " + saved.getRfqNumber() + " is ready. Total Rs " +
+                total.toPlainString() + ". View & accept at navgrow.org/saved-quotes");
+        } catch (Exception ignored) { /* SMS best-effort */ }
 
         return ResponseEntity.ok(saved);
     }
@@ -258,10 +298,18 @@ public class RfqController {
         return repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("RFQ", id.toString()));
     }
 
+    /** Parse a UUID string; return null for non-UUID ids (e.g. static catalogue ids like "2"). */
+    private static java.util.UUID parseUuidOrNull(String s) {
+        if (s == null || s.isBlank()) return null;
+        try { return java.util.UUID.fromString(s.trim()); }
+        catch (IllegalArgumentException ex) { return null; }
+    }
+
     private String generateRfqNumber() {
-        String day = LocalDateTime.now().format(DAY);
-        // Sequence based on count for the day-ish; collision-safe enough with random suffix
-        long n = (repo.count() % 10000) + 1;
-        return String.format("RFQ-%s-%04d", day, n);
+        // Timestamp-to-the-second plus a random tail keeps RFQ numbers unique even
+        // across restarts, deletions, or concurrent submissions (rfq_number is unique).
+        String stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+        int rand = java.util.concurrent.ThreadLocalRandom.current().nextInt(100, 1000);
+        return String.format("RFQ-%s-%03d", stamp, rand);
     }
 }

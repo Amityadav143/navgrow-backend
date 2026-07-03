@@ -33,19 +33,22 @@ public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
     private final UserDetailsServiceImpl userDetailsService;
+    private final org.springframework.beans.factory.ObjectProvider<com.navgrow.security.oauth.OAuth2SuccessHandler> oauth2SuccessHandler;
 
     private static final String[] PUBLIC_GET = {
         "/products/**", "/projects/**", "/news/**", "/gallery/**",
         "/tenders/**", "/jobs/**", "/coupons/validate",
         "/actuator/health", "/actuator/info",
-        "/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html"
+        "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**", "/v3/api-docs.yaml",
+        "/swagger-resources/**", "/webjars/**",
+        "/oauth2/**", "/login/oauth2/**"
     };
 
     private static final String[] PUBLIC_POST = {
         "/auth/**", "/contact", "/newsletter/**",
         "/quotes", "/orders", "/orders/payment/verify", "/rfqs",
         "/jobs/*/apply", "/products/*/reviews",
-        "/chat"
+        "/chat", "/analytics/events"
     };
 
     private static final String[] PUBLIC_GET_EXTRA = {
@@ -63,7 +66,7 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        return http
+        http
             .csrf(AbstractHttpConfigurer::disable)
             .cors(cors -> {})
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -80,7 +83,6 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.PUT,    "/projects/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
                 .requestMatchers(HttpMethod.POST,   "/gallery/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
                 .requestMatchers(HttpMethod.PUT,    "/gallery/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
-                .requestMatchers(HttpMethod.GET,    "/site-settings/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
                 .requestMatchers(HttpMethod.PUT,    "/site-settings/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
                 .requestMatchers(HttpMethod.POST,   "/site-settings/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
                 // Only ADMIN manages orders, coupons, users
@@ -88,9 +90,18 @@ public class SecurityConfig {
                 .requestMatchers("/coupons/**").hasAnyRole("ADMIN","MANAGER")
                 .anyRequest().authenticated()
             )
-            .userDetailsService(userDetailsService)
-            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
-            .build();
+            .userDetailsService(userDetailsService);
+
+        // Enable OAuth2 login only when a provider (e.g. Google) is configured,
+        // so the application still starts without OAuth credentials.
+        com.navgrow.security.oauth.OAuth2SuccessHandler successHandler = oauth2SuccessHandler.getIfAvailable();
+        if (successHandler != null) {
+            http.oauth2Login(oauth -> oauth.successHandler(successHandler));
+        }
+
+        http.addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+
+        return http.build();
     }
 
     @Bean public PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(12); }

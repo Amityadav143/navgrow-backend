@@ -58,7 +58,7 @@ public class QuoteController {
             @RequestParam(defaultValue="0") int page,
             @RequestParam(defaultValue="20") int size,
             @RequestParam(required=false) QuoteStatus status) {
-        Pageable p = PageRequest.of(page, size, Sort.by("createdAt").descending());
+        Pageable p = PageRequest.of(com.navgrow.util.PageUtil.safePage(page), com.navgrow.util.PageUtil.safeSize(size), Sort.by("createdAt").descending());
         return ResponseEntity.ok(status != null ? repo.findByStatusOrderByCreatedAtDesc(status, p) : repo.findAllByOrderByCreatedAtDesc(p));
     }
 

@@ -27,19 +27,26 @@ public class NewsArticle {
     @Column(nullable = false, columnDefinition = "TEXT") private String content;
     private String category;
     @Column(name = "image_url", columnDefinition = "TEXT") private String imageUrl;
+    /** Additional gallery image URLs, one per line. */
+    @Column(name = "image_urls", columnDefinition = "TEXT") private String imageUrls;
     @Column(name = "author_name") private String authorName = "Navgrow Team";
 
     @Enumerated(EnumType.STRING) @Column(nullable = false)
+    @Builder.Default
     private NewsStatus status = NewsStatus.DRAFT;
 
     @Column(name = "published_at") private LocalDateTime publishedAt;
-    @Column(name = "view_count") private int viewCount = 0;
+    @Builder.Default @Column(name = "view_count") private int viewCount = 0;
 
     @JdbcTypeCode(SqlTypes.ARRAY)
     @Column(columnDefinition = "text[]")
     private List<String> tags;
 
-    @Column(name = "created_at", updatable = false) private LocalDateTime createdAt = LocalDateTime.now();
-    @Column(name = "updated_at") private LocalDateTime updatedAt = LocalDateTime.now();
+    @Builder.Default @Column(name = "created_at", updatable = false) private LocalDateTime createdAt = LocalDateTime.now();
+    @Builder.Default @Column(name = "updated_at") private LocalDateTime updatedAt = LocalDateTime.now();
+    @PrePersist public void prePersist() {
+        if (createdAt == null) createdAt = LocalDateTime.now();
+        if (updatedAt == null) updatedAt = LocalDateTime.now();
+    }
     @PreUpdate public void preUpdate() { this.updatedAt = LocalDateTime.now(); }
 }

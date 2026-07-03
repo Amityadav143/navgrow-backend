@@ -54,7 +54,7 @@ public class ContactController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) Boolean unread) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+        Pageable pageable = PageRequest.of(com.navgrow.util.PageUtil.safePage(page), com.navgrow.util.PageUtil.safeSize(size), Sort.by("createdAt").descending());
         Page<ContactMessage> result = Boolean.TRUE.equals(unread)
             ? repo.findByReadFalseOrderByCreatedAtDesc(pageable)
             : repo.findAllByOrderByCreatedAtDesc(pageable);

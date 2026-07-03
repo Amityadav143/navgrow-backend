@@ -8,6 +8,8 @@
 package com.navgrow.entity;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -25,12 +27,15 @@ public class Coupon {
 
     @Column(name = "coupon_type", nullable = false)
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Builder.Default
     private CouponType couponType = CouponType.PERCENTAGE;
 
     @Column(nullable = false, precision = 8, scale = 2)
     private BigDecimal value;
 
     @Column(name = "min_order_amount", precision = 12, scale = 2)
+    @Builder.Default
     private BigDecimal minOrderAmount = BigDecimal.ZERO;
 
     @Column(name = "max_discount", precision = 12, scale = 2)
@@ -40,18 +45,22 @@ public class Coupon {
     private Integer usageLimit;
 
     @Column(name = "usage_count")
+    @Builder.Default
     private int usageCount = 0;
 
     @Column(name = "is_active")
+    @Builder.Default
     private boolean active = true;
 
     @Column(name = "valid_from")
+    @Builder.Default
     private LocalDateTime validFrom = LocalDateTime.now();
 
     @Column(name = "valid_until")
     private LocalDateTime validUntil;
 
     @Column(name = "created_at", updatable = false)
+    @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
 
     public enum CouponType { PERCENTAGE, FLAT }
@@ -60,7 +69,7 @@ public class Coupon {
         if (!active) return false;
         if (usageLimit != null && usageCount >= usageLimit) return false;
         LocalDateTime now = LocalDateTime.now();
-        if (now.isBefore(validFrom)) return false;
+        if (validFrom != null && now.isBefore(validFrom)) return false;
         if (validUntil != null && now.isAfter(validUntil)) return false;
         return true;
     }
@@ -69,11 +78,16 @@ public class Coupon {
         if (orderAmount.compareTo(minOrderAmount) < 0) return BigDecimal.ZERO;
         BigDecimal discount;
         if (couponType == CouponType.PERCENTAGE) {
-            discount = orderAmount.multiply(value).divide(new BigDecimal("100"));
+            discount = orderAmount.multiply(value).divide(new BigDecimal("100"), 2, java.math.RoundingMode.HALF_UP);
             if (maxDiscount != null && discount.compareTo(maxDiscount) > 0) discount = maxDiscount;
         } else {
             discount = value;
         }
-        return discount.min(orderAmount);
+        return discount.min(orderAmount).setScale(2, java.math.RoundingMode.HALF_UP);
+    }
+
+    @PrePersist
+    public void prePersist() {
+        if (createdAt == null) createdAt = LocalDateTime.now();
     }
 }

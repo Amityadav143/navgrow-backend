@@ -101,7 +101,7 @@ public class UserController {
             @RequestParam(defaultValue="0") int page,
             @RequestParam(defaultValue="20") int size,
             @RequestParam(required=false) String q) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+        Pageable pageable = PageRequest.of(com.navgrow.util.PageUtil.safePage(page), com.navgrow.util.PageUtil.safeSize(size), Sort.by("createdAt").descending());
         if (q != null && !q.isBlank()) {
             // Case-insensitive search by name or email
             return ResponseEntity.ok(repo.findByFullNameContainingIgnoreCaseOrEmailContainingIgnoreCase(q, q, pageable));

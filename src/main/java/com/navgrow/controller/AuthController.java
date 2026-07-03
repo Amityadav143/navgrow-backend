@@ -35,6 +35,7 @@ public class AuthController {
     private final JwtUtil jwtUtil;
     private final UserRepository userRepo;
     private final PasswordEncoder encoder;
+    private final com.navgrow.service.OtpService otpService;
 
     // ── DTOs ────────────────────────────────────────────────────────────────
     @Data
@@ -111,7 +112,38 @@ public class AuthController {
         return ResponseEntity.ok(buildTokenResponse(req.getPhone(), ud));
     }
 
-    // ── Register ─────────────────────────────────────────────────────────────
+    // ── OTP login ────────────────────────────────────────────────────────────
+    @PostMapping("/send-otp")
+    public ResponseEntity<Map<String, String>> sendOtp(@RequestParam String phone) {
+        String p = phone == null ? "" : phone.replaceAll("\\s", "").trim();
+        if (!p.matches("^[6-9]\\d{9}$")) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Enter a valid 10-digit mobile number."));
+        }
+        // Only issue an OTP for a registered phone (avoids enumeration of unknowns via behaviour change:
+        // we still return 200 so the response doesn't reveal whether the number exists).
+        if (userRepo.findByPhone(p).isPresent()) {
+            otpService.issue(p);
+        }
+        return ResponseEntity.ok(Map.of("message", "If the number is registered, an OTP has been sent."));
+    }
+
+    @Data
+    public static class OtpVerifyRequest {
+        @NotBlank String phone;
+        @NotBlank String otp;
+    }
+
+    @PostMapping("/verify-otp")
+    public ResponseEntity<?> verifyOtp(@RequestBody OtpVerifyRequest req) {
+        String p = req.getPhone() == null ? "" : req.getPhone().replaceAll("\\s", "").trim();
+        User user = userRepo.findByPhone(p).orElse(null);
+        if (user == null || !otpService.verify(p, req.getOtp() == null ? "" : req.getOtp().trim())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of("message", "Invalid or expired OTP. Please try again."));
+        }
+        UserDetails ud = uds.loadUserByUsername(user.getEmail());
+        return ResponseEntity.ok(buildTokenResponse(p, ud));
+    }
     @PostMapping("/register")
     public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest req) {
         if (req.getEmail() == null && req.getPhone() == null) {

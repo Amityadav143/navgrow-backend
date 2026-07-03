@@ -25,9 +25,15 @@ public class Project {
     private String year;
     @Column(columnDefinition = "TEXT") private String description;
     @Column(name = "image_url", columnDefinition = "TEXT") private String imageUrl;
-    @Column(name = "is_featured") private boolean featured = false;
-    @Column(name = "sort_order") private int sortOrder = 0;
-    @Column(name = "created_at", updatable = false) private LocalDateTime createdAt = LocalDateTime.now();
-    @Column(name = "updated_at") private LocalDateTime updatedAt = LocalDateTime.now();
+    @Builder.Default @Column(name = "is_featured") private boolean featured = false;
+    @Builder.Default @Column(name = "sort_order") private int sortOrder = 0;
+    @Builder.Default @Column(name = "created_at", updatable = false) private LocalDateTime createdAt = LocalDateTime.now();
+    @Builder.Default @Column(name = "updated_at") private LocalDateTime updatedAt = LocalDateTime.now();
+
+    @PrePersist
+    public void prePersist() {
+        if (createdAt == null) createdAt = LocalDateTime.now();
+        if (updatedAt == null) updatedAt = LocalDateTime.now();
+    }
     @PreUpdate public void preUpdate() { this.updatedAt = LocalDateTime.now(); }
 }

@@ -75,40 +75,51 @@ WhatsApp:     https://wa.me/918927070972
 Website:      https://navgrow.org
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CORE SERVICES (6 domains)
+WHO WE ARE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. RAILWAY INFRASTRUCTURE
-   • Loco modification & retrofitting for improved performance
-   • Diesel loco shed construction & renovation
-   • Rainwater leakage testing plant installation
-   • Modified hand brake fitment & testing
-   • Track infrastructure for Indian Railways (NER Zone specialist)
-   • Wabtec locomotive services & lube oil storage solutions
+Navgrow is a VERSATILE, MULTI-SECTOR engineering firm. We began with Indian Railways
+projects — where precision and compliance are non-negotiable — and that discipline now
+powers our work in sustainability. When asked what we do, lead with our SUSTAINABILITY
+services — rainwater harvesting, solar energy, water recycling, energy efficiency, EV
+charging, and green-building consulting. Mention our engineering heritage (railways,
+industrial) as the proven foundation that makes us a reliable sustainability partner.
 
-2. GOVERNMENT CONTRACTS
-   • End-to-end tender management (GeM Portal, IREPS, state portals)
-   • Bid preparation, technical compliance, documentation
-   • Contract execution for Indian Railways & PSUs
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CORE SERVICES (Sustainability Solutions)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. RAINWATER HARVESTING
+   • Rooftop and surface runoff harvesting systems
+   • Groundwater recharge structures (CGWA-compliant)
+   • Storage, filtration, water audits, and AMC
 
-3. MAINTENANCE SERVICES
-   • Scheduled preventive maintenance for railway assets
-   • Emergency breakdown response (24/7 availability)
-   • Annual Maintenance Contracts (AMC) for loco sheds
+2. SOLAR ENERGY SOLUTIONS
+   • Rooftop, ground-mount, and hybrid solar PV systems
+   • Feasibility, net-metering, and subsidy (MNRE) assistance
+   • Battery storage, solar pumping, and O&M
 
-4. CONSULTING & ADVISORY
-   • Railway infrastructure planning & feasibility studies
-   • Regulatory advisory (RDSO, Commissioner of Railway Safety)
-   • Project management & quality assurance
+3. WASTEWATER TREATMENT & RECYCLING
+   • Sewage (STP) and Effluent (ETP) Treatment Plants
+   • Water recycling, reuse, and Zero Liquid Discharge support
+   • CPCB/SPCB pollution-control compliance
 
-5. SAFETY & COMPLIANCE
-   • RDSO-compliant safety audits
-   • HSE management systems
-   • Safety culture training & awareness programs
+4. ENERGY EFFICIENCY & AUDITS
+   • BEE-aligned energy audits and retrofits
+   • LED, HVAC, motor, and power-factor optimisation
+   • IoT energy monitoring and carbon footprint assessment
 
-6. TECHNOLOGY SOLUTIONS
-   • IoT-based monitoring for railway assets
-   • Automated data logging & reporting dashboards
-   • SCADA integration for loco sheds
+5. GREEN BUILDING & SUSTAINABILITY CONSULTING
+   • IGBC / GRIHA / LEED certification advisory
+   • Sustainable design, environmental compliance, ESG reporting
+
+ENGINEERING HERITAGE (our proven foundation)
+   • Railway engineering (loco modification, testing plants — NER Zone, Wabtec)
+   • Industrial fabrication and civil works
+   • Government tender management (GeM, IREPS) and maintenance/AMC
+
+OTHER CAPABILITIES
+   • Safety audits, HSE management, training
+   • IoT-based asset monitoring & reporting dashboards
+   • Standards-aligned (RDSO/ISO) quality assurance
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 B2B SHOP — navgrow.org/shop
@@ -140,14 +151,22 @@ RESPONSE GUIDELINES
 
     static {
         CANNED.put("service",
-            "Navgrow offers **6 engineering service domains**:\n\n" +
-            "• Railway Infrastructure (loco modification, shed construction)\n" +
-            "• Government Contracts (GeM, IREPS, tender management)\n" +
-            "• Maintenance Services (scheduled + emergency, 24/7)\n" +
-            "• Consulting & Advisory (RDSO compliance, project management)\n" +
-            "• Safety & Compliance (HSE audits, training)\n" +
-            "• Technology Solutions (IoT, SCADA, data logging)\n\n" +
-            "📋 Get a quote: navgrow.org/quote-calculator");
+            "Navgrow specialises in **sustainability solutions**. Our services include:\n\n" +
+            "💧 Rainwater Harvesting (recharge systems, water audits)\n" +
+            "☀️ Solar Energy (rooftop, ground-mount, hybrid PV)\n" +
+            "♻️ Wastewater Treatment & Recycling (STP/ETP, ZLD)\n" +
+            "⚡ Energy Efficiency & Audits (BEE-aligned retrofits)\n" +
+            "🌿 Green Building Consulting (IGBC/GRIHA/LEED)\n\n" +
+            "Backed by our proven railway & industrial engineering heritage. 📋 navgrow.org/quote-calculator");
+
+        CANNED.put("sector|sectors|sustainability|sustainable|green|solar|rainwater|water|energy|environment|renewable",
+            "Navgrow focuses on **sustainability solutions** for industry, government, and infrastructure:\n\n" +
+            "💧 **Rainwater Harvesting** — recharge structures, storage, water audits\n" +
+            "☀️ **Solar Energy** — rooftop/ground-mount PV, net-metering, storage\n" +
+            "♻️ **Wastewater Treatment** — STP/ETP, recycling, ZLD compliance\n" +
+            "⚡ **Energy Efficiency** — audits, retrofits, carbon assessment\n" +
+            "🌿 **Green Building** — IGBC/GRIHA/LEED, ESG reporting\n\n" +
+            "Our railway & industrial engineering heritage is the proven foundation behind it all. 📋 navgrow.org/services");
 
         CANNED.put("product|shop|buy|order|equipment|safety|tool|glove|helmet|boot|wrench|gauge",
             "Our **B2B Engineering Shop** has 20+ ISI-certified products across 5 categories:\n\n" +

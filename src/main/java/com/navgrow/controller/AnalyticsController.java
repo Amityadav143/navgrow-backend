@@ -27,6 +27,7 @@ public class AnalyticsController {
     private final NewsletterRepository     newsletterRepo;
     private final ProductRepository        productRepo;
     private final JobApplicationRepository appRepo;
+    private final com.navgrow.repository.JobListingRepository jobRepo;
 
     @GetMapping("/dashboard")
     public ResponseEntity<Map<String, Object>> dashboard() {
@@ -43,7 +44,7 @@ public class AnalyticsController {
             Map.entry("newsletterSubscribers",  newsletterRepo.countByActiveTrue()),
             Map.entry("activeProducts",         productRepo.count()),
             Map.entry("newApplications",        appRepo.countByStatus(ApplicationStatus.NEW)),
-            Map.entry("openJobs",               0L) // placeholder
+            Map.entry("openJobs",               jobRepo.countByStatus(com.navgrow.enums.JobStatus.OPEN))
         ));
     }
 

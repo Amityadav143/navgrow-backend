@@ -9,6 +9,8 @@ package com.navgrow.entity;
 import com.navgrow.enums.TenderStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -27,11 +29,17 @@ public class Tender {
     @Column(name = "value_max", precision = 12, scale = 2) private BigDecimal valueMax;
     @Column(nullable = false) private LocalDate deadline;
 
-    @Enumerated(EnumType.STRING) @Column(nullable = false)
+    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.NAMED_ENUM) @Column(nullable = false)
+    @Builder.Default
     private TenderStatus status = TenderStatus.OPEN;
 
-    @Column(name = "is_featured") private boolean featured = false;
-    @Column(name = "created_at", updatable = false) private LocalDateTime createdAt = LocalDateTime.now();
-    @Column(name = "updated_at") private LocalDateTime updatedAt = LocalDateTime.now();
+    @Builder.Default @Column(name = "is_featured") private boolean featured = false;
+    @Builder.Default @Column(name = "created_at", updatable = false) private LocalDateTime createdAt = LocalDateTime.now();
+    @Builder.Default @Column(name = "updated_at") private LocalDateTime updatedAt = LocalDateTime.now();
     @PreUpdate public void preUpdate() { this.updatedAt = LocalDateTime.now(); }
+
+    @PrePersist
+    public void prePersist() {
+        if (createdAt == null) createdAt = LocalDateTime.now();
+    }
 }

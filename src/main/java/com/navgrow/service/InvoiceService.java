@@ -56,7 +56,7 @@ public class InvoiceService {
 
             String taxCols;
             if (intraState) {
-                BigDecimal half = gstRate.divide(BigDecimal.valueOf(2));
+                BigDecimal half = gstRate.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
                 BigDecimal halfAmt = taxAmt.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
                 taxCols = td(pct(half) + "<br/>" + money(halfAmt)) + td(pct(half) + "<br/>" + money(halfAmt));
             } else {

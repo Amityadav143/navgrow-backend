@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.*;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.*;
 
 @RestController
@@ -38,6 +39,7 @@ public class OrderController {
     private final RazorpayClient razorpayClient;
     private final OrderNumberGenerator orderNumGen;
     private final EmailService emailService;
+    private final com.navgrow.service.SmsService smsService;
     private final com.navgrow.service.InvoiceService invoiceService;
 
     @Value("${razorpay.key-secret}")
@@ -77,31 +79,55 @@ public class OrderController {
 
     // ── Create Razorpay order ───────────────────────────────────────────────
     @PostMapping
+    @org.springframework.transaction.annotation.Transactional
     public ResponseEntity<Map<String, Object>> createOrder(@Valid @RequestBody CreateOrderRequest req) {
         // Validate and build order items
         List<OrderItem> items = new ArrayList<>();
         BigDecimal subtotal = BigDecimal.ZERO;
+        BigDecimal gstAmount = BigDecimal.ZERO;
 
         for (OrderItemReq itemReq : req.getItems()) {
             Product product = productRepo.findById(itemReq.getProductId())
                 .orElseThrow(() -> new ResourceNotFoundException("Product", itemReq.getProductId().toString()));
             if (!product.isActive()) throw new BadRequestException("Product not available: " + product.getName());
+            if (itemReq.getQuantity() == null || itemReq.getQuantity() < 1) {
+                throw new BadRequestException("Invalid quantity for " + product.getName());
+            }
+            // Prevent overselling: reject if the requested quantity exceeds available stock.
+            if (product.getStockQty() != null && itemReq.getQuantity() > product.getStockQty()) {
+                throw new BadRequestException("Only " + product.getStockQty()
+                    + " unit(s) of " + product.getName() + " are in stock");
+            }
 
-            BigDecimal lineTotal = product.getPrice().multiply(BigDecimal.valueOf(itemReq.getQuantity()));
+            BigDecimal lineTotal = product.getPrice()
+                .multiply(BigDecimal.valueOf(itemReq.getQuantity()))
+                .setScale(2, RoundingMode.HALF_UP);
+            // Each product can have its own GST slab (5/12/18/28%), so tax is summed per line.
+            BigDecimal rate = product.getGstRate() != null ? product.getGstRate() : new BigDecimal("18");
+            BigDecimal lineGst = lineTotal.multiply(rate)
+                .divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
+
             subtotal = subtotal.add(lineTotal);
+            gstAmount = gstAmount.add(lineGst);
 
             items.add(OrderItem.builder()
                 .productName(product.getName())
                 .product(product)
                 .unitPrice(product.getPrice())
-                .gstRate(product.getGstRate())
+                .gstRate(rate)
                 .quantity(itemReq.getQuantity())
                 .subtotal(lineTotal)
                 .build());
         }
 
-        BigDecimal gstAmount = subtotal.multiply(new BigDecimal("0.18"));
-        BigDecimal grandTotal = subtotal.add(gstAmount);
+        subtotal  = subtotal.setScale(2, RoundingMode.HALF_UP);
+        gstAmount = gstAmount.setScale(2, RoundingMode.HALF_UP);
+        // Shipping: free for orders of ₹5,000+ (by item subtotal), otherwise a flat ₹150.
+        // This mirrors the cart/checkout display so the amount charged matches what the buyer saw.
+        BigDecimal shipping = subtotal.compareTo(new BigDecimal("5000")) >= 0
+            ? BigDecimal.ZERO : new BigDecimal("150");
+        shipping = shipping.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal grandTotal = subtotal.add(gstAmount).add(shipping).setScale(2, RoundingMode.HALF_UP);
 
         // Create DB order
         Order order = Order.builder()
@@ -112,7 +138,7 @@ public class OrderController {
             .addressLine1(req.getAddressLine1()).addressLine2(req.getAddressLine2())
             .city(req.getCity()).state(req.getState()).pincode(req.getPincode())
             .subtotal(subtotal).gstAmount(gstAmount)
-            .shippingCharge(BigDecimal.ZERO).discountAmount(BigDecimal.ZERO)
+            .shippingCharge(shipping).discountAmount(BigDecimal.ZERO)
             .grandTotal(grandTotal)
             .status(OrderStatus.PENDING).paymentStatus(PaymentStatus.PENDING)
             .notes(req.getNotes())
@@ -153,6 +179,7 @@ public class OrderController {
 
     // ── Verify payment ──────────────────────────────────────────────────────
     @PostMapping("/payment/verify")
+    @org.springframework.transaction.annotation.Transactional
     public ResponseEntity<Map<String, Object>> verifyPayment(@Valid @RequestBody PaymentVerifyRequest req) {
         Order order = orderRepo.findByRazorpayOrderId(req.getRazorpayOrderId())
             .orElseThrow(() -> new ResourceNotFoundException("Order not found for Razorpay order: " + req.getRazorpayOrderId()));
@@ -179,10 +206,29 @@ public class OrderController {
             order.setStatus(OrderStatus.CONFIRMED);
             orderRepo.save(order);
 
+            // Decrement stock for each purchased item now that payment has succeeded.
+            // Done after payment (not at order creation) so abandoned/unpaid orders
+            // don't hold inventory. Stock never goes below zero.
+            for (OrderItem item : order.getItems()) {
+                Product product = item.getProduct();
+                if (product != null && product.getStockQty() != null) {
+                    int remaining = product.getStockQty() - item.getQuantity();
+                    product.setStockQty(Math.max(0, remaining));
+                    productRepo.save(product);
+                }
+            }
+
             // Send confirmation email async
             emailService.sendOrderConfirmation(
                 order.getCustomerEmail(), order.getCustomerName(),
                 order.getOrderNumber(), order.getGrandTotal().toPlainString());
+
+            // Send confirmation SMS (best-effort; never blocks the response)
+            try {
+                smsService.send(order.getCustomerPhone(),
+                    "Your Navgrow order " + order.getOrderNumber() + " is confirmed. Total Rs " +
+                    order.getGrandTotal().toPlainString() + ". Track it at navgrow.org. Thank you!");
+            } catch (Exception ignored) { /* SMS must never break order confirmation */ }
 
             return ResponseEntity.ok(Map.of(
                 "success", true,
@@ -207,6 +253,23 @@ public class OrderController {
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
         return ResponseEntity.ok(
             orderRepo.findByCustomerEmailOrderByCreatedAtDesc(ud.getUsername(), pageable));
+    }
+
+    // ── Public order tracking (by order number, no auth) ─────────────────────
+    @GetMapping("/track/{orderNumber}")
+    public ResponseEntity<Map<String, Object>> track(@PathVariable String orderNumber) {
+        Order order = orderRepo.findByOrderNumber(orderNumber)
+            .orElseThrow(() -> new ResourceNotFoundException("Order", orderNumber));
+        // Return only non-sensitive fields needed for tracking (no full customer PII).
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("orderNumber",    order.getOrderNumber());
+        out.put("status",         order.getStatus());
+        out.put("paymentStatus",  order.getPaymentStatus());
+        out.put("grandTotal",     order.getGrandTotal());
+        out.put("trackingNumber", order.getTrackingNumber());
+        out.put("courierName",    order.getCourierName());
+        out.put("createdAt",      order.getCreatedAt());
+        return ResponseEntity.ok(out);
     }
 
     // ── Admin endpoints ─────────────────────────────────────────────────────

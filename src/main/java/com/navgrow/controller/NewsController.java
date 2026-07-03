@@ -28,8 +28,9 @@ public class NewsController {
     private final SlugUtil slugUtil;
 
     @Data public static class NewsReq {
-        @NotBlank String title, content;
-        String excerpt, category, imageUrl, authorName;
+        @NotBlank String title;
+        String content;
+        String excerpt, category, imageUrl, imageUrls, authorName;
         List<String> tags;
         NewsStatus status;
     }
@@ -41,7 +42,8 @@ public class NewsController {
             @RequestParam(required=false) NewsStatus status) {
         // Default to PUBLISHED for public endpoint; admin can pass DRAFT/ALL
         NewsStatus effectiveStatus = status != null ? status : NewsStatus.PUBLISHED;
-        Pageable p = PageRequest.of(page, size, Sort.by("publishedAt").descending());
+        Pageable p = PageRequest.of(com.navgrow.util.PageUtil.safePage(page),
+            com.navgrow.util.PageUtil.safeSize(size), Sort.by("publishedAt").descending());
         if (q != null && !q.isBlank()) {
             // Text search across title and excerpt
             return ResponseEntity.ok(repo.findByStatusAndTitleContainingIgnoreCaseOrStatusAndExcerptContainingIgnoreCase(
@@ -63,8 +65,8 @@ public class NewsController {
         String slug = slugUtil.uniqueSlug(req.getTitle(), s -> repo.findBySlug(s).isPresent());
         NewsStatus st = req.getStatus() != null ? req.getStatus() : NewsStatus.DRAFT;
         NewsArticle a = NewsArticle.builder().title(req.getTitle()).slug(slug)
-            .excerpt(req.getExcerpt()).content(req.getContent()).category(req.getCategory())
-            .imageUrl(req.getImageUrl()).authorName(req.getAuthorName() != null ? req.getAuthorName() : "Navgrow Team")
+            .excerpt(req.getExcerpt()).content(req.getContent() != null ? req.getContent() : "").category(req.getCategory())
+            .imageUrl(req.getImageUrl()).imageUrls(req.getImageUrls()).authorName(req.getAuthorName() != null ? req.getAuthorName() : "Navgrow Team")
             .tags(req.getTags()).status(st)
             .publishedAt(st == NewsStatus.PUBLISHED ? LocalDateTime.now() : null).build();
         return ResponseEntity.status(201).body(repo.save(a));
@@ -74,7 +76,7 @@ public class NewsController {
     public ResponseEntity<NewsArticle> update(@PathVariable UUID id, @Valid @RequestBody NewsReq req) {
         NewsArticle a = repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Article", id.toString()));
         a.setTitle(req.getTitle()); a.setContent(req.getContent()); a.setExcerpt(req.getExcerpt());
-        a.setCategory(req.getCategory()); a.setImageUrl(req.getImageUrl()); a.setTags(req.getTags());
+        a.setCategory(req.getCategory()); a.setImageUrl(req.getImageUrl()); a.setImageUrls(req.getImageUrls()); a.setTags(req.getTags());
         if (req.getStatus() != null) {
             a.setStatus(req.getStatus());
             if (req.getStatus() == NewsStatus.PUBLISHED && a.getPublishedAt() == null) a.setPublishedAt(LocalDateTime.now());
