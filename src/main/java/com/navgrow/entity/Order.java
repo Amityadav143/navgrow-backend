@@ -52,11 +52,13 @@ public class Order {
     @Builder.Default @Column(name = "discount_amount", precision = 12, scale = 2) private BigDecimal discountAmount = BigDecimal.ZERO;
     @Column(name = "grand_total",     precision = 12, scale = 2) private BigDecimal grandTotal;
 
-    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.NAMED_ENUM) @Column(nullable = false)
+    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(nullable = false, columnDefinition = "order_status")
     @Builder.Default
     private OrderStatus status = OrderStatus.PENDING;
 
-    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.NAMED_ENUM) @Column(name = "payment_status", nullable = false)
+    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "payment_status", nullable = false, columnDefinition = "payment_status")
     @Builder.Default
     private PaymentStatus paymentStatus = PaymentStatus.PENDING;
 

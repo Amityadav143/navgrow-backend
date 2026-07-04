@@ -25,7 +25,7 @@ public class Coupon {
 
     private String description;
 
-    @Column(name = "coupon_type", nullable = false)
+    @Column(name = "coupon_type", nullable = false, columnDefinition = "coupon_type")
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Builder.Default

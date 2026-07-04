@@ -32,7 +32,8 @@ public class JobApplication {
     @Column(name = "cover_note", columnDefinition = "TEXT") private String coverNote;
     @Column(name = "resume_url") private String resumeUrl;
 
-    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.NAMED_ENUM) @Column(nullable = false)
+    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(nullable = false, columnDefinition = "app_status")
     @Builder.Default
     private ApplicationStatus status = ApplicationStatus.NEW;
 

@@ -29,7 +29,8 @@ public class Tender {
     @Column(name = "value_max", precision = 12, scale = 2) private BigDecimal valueMax;
     @Column(nullable = false) private LocalDate deadline;
 
-    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.NAMED_ENUM) @Column(nullable = false)
+    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(nullable = false, columnDefinition = "tender_status")
     @Builder.Default
     private TenderStatus status = TenderStatus.OPEN;
 

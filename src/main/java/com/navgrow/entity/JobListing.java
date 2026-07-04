@@ -32,7 +32,8 @@ public class JobListing {
     @Column(columnDefinition = "text[]")
     private List<String> skills;
 
-    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.NAMED_ENUM) @Column(nullable = false)
+    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(nullable = false, columnDefinition = "job_status")
     @Builder.Default
     private JobStatus status = JobStatus.OPEN;
 

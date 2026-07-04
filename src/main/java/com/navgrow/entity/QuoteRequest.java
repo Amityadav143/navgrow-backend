@@ -38,7 +38,9 @@ public class QuoteRequest {
     @Column(name = "est_high", precision = 12, scale = 2) private BigDecimal estHigh;
     @Column(columnDefinition = "TEXT") private String notes;
 
-    @Enumerated(EnumType.STRING) @Column(nullable = false)
+    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(nullable = false, columnDefinition = "quote_status")
+    @Builder.Default
     private QuoteStatus status = QuoteStatus.NEW;
 
     @Column(name = "quoted_amount", precision = 12, scale = 2) private BigDecimal quotedAmount;

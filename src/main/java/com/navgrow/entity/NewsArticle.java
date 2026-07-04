@@ -31,7 +31,8 @@ public class NewsArticle {
     @Column(name = "image_urls", columnDefinition = "TEXT") private String imageUrls;
     @Column(name = "author_name") private String authorName = "Navgrow Team";
 
-    @Enumerated(EnumType.STRING) @Column(nullable = false)
+    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(nullable = false, columnDefinition = "news_status")
     @Builder.Default
     private NewsStatus status = NewsStatus.DRAFT;
 
