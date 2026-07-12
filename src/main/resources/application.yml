@@ -76,6 +76,9 @@ spring:
 # ── Server ────────────────────────────────────────────────────────────────
 server:
   port: ${PORT:8080}
+  # Honour X-Forwarded-Proto/Host from the reverse proxy so OAuth redirect
+  # URIs are built as https://navgrow.org/... instead of http://localhost:8080.
+  forward-headers-strategy: framework
   servlet:
     context-path: /api
   compression:

@@ -23,7 +23,7 @@ public class EmailService {
 
     private final JavaMailSender mailSender;
 
-    @Value("${app.frontend-url:http://localhost:5173}")
+    @Value("${app.frontend-url:http://navgrow.org}")
     private String frontendUrl;
 
     @Value("${app.contact-email:info@navgrow.org}")

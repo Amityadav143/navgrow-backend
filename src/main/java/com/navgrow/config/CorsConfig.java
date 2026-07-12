@@ -32,7 +32,7 @@ public class CorsConfig {
         String prop = env.getProperty("app.allowed-origins");
         List<String> allowedOrigins;
         if (prop == null || prop.isBlank()) {
-            allowedOrigins = List.of("https://dev.navgrow.tech","https://www.dev.navgrow.tech","https://navgrow.tech","https://www.navgrow.tech","http://localhost:3000","http://localhost:5173");
+            allowedOrigins = List.of("https://navgrow.org","https://www.navgrow.org","https://www.dev.navgrow.org","https://navgrow.tech","https://www.navgrow.tech","https://dev.navgrow.tech","https://www.dev.navgrow.tech","http://localhost:3000","http://localhost:5173");
         } else {
             // Split on commas and trim entries
             String[] parts = prop.split(",");

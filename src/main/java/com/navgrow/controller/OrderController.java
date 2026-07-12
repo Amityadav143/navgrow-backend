@@ -275,9 +275,24 @@ public class OrderController {
     // ── Admin endpoints ─────────────────────────────────────────────────────
     // ── GST tax invoice (print-ready HTML → browser saves as PDF) ─────────────
     @GetMapping(value = "/{orderNumber}/invoice", produces = "text/html")
-    public ResponseEntity<String> invoice(@PathVariable String orderNumber) {
+    public ResponseEntity<String> invoice(@PathVariable String orderNumber,
+                                          @RequestParam(value = "email", required = false) String email) {
         Order order = orderRepo.findByOrderNumber(orderNumber)
             .orElseThrow(() -> new com.navgrow.exception.ResourceNotFoundException("Order", orderNumber));
+        // The invoice carries full billing PII (name, address, phone, GSTIN), so —
+        // unlike the deliberately PII-free /track endpoint — it must not be readable
+        // by order number alone. The caller must also present the billing email.
+        if (email == null || order.getCustomerEmail() == null
+                || !email.trim().equalsIgnoreCase(order.getCustomerEmail().trim())) {
+            return ResponseEntity.status(403)
+                .header("Content-Type", "text/html; charset=UTF-8")
+                .body("<html><body style='font-family:sans-serif;padding:40px;max-width:560px;margin:auto'>"
+                    + "<h2>Verification needed</h2>"
+                    + "<p>To protect your billing details, invoices can only be opened from the "
+                    + "verified link in <strong>My Account &rarr; Orders</strong> on navgrow.org.</p>"
+                    + "<p>Need help? Write to info@navgrow.org or call +91 89270 70972.</p>"
+                    + "</body></html>");
+        }
         // Only allow invoice once payment is captured
         if (order.getPaymentStatus() == null
                 || order.getPaymentStatus() == com.navgrow.enums.PaymentStatus.PENDING) {

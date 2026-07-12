@@ -41,9 +41,11 @@ public class User {
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false, columnDefinition = "user_role")
+    @Builder.Default
     private UserRole role = UserRole.USER;
 
     @Column(name = "is_active")
+    @Builder.Default
     private boolean active = true;
 
     private String company;
