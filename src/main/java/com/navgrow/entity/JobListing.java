@@ -32,6 +32,11 @@ public class JobListing {
     @Column(columnDefinition = "text[]")
     private List<String> skills;
 
+    @Column(name = "salary_from", precision = 12, scale = 2) private java.math.BigDecimal salaryFrom;
+    @Column(name = "salary_to",   precision = 12, scale = 2) private java.math.BigDecimal salaryTo;
+    @Builder.Default @Column(nullable = false) private Integer openings = 1;
+    @Column(name = "application_deadline") private LocalDateTime applicationDeadline;
+
     @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false, columnDefinition = "job_status")
     @Builder.Default

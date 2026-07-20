@@ -19,6 +19,8 @@ import java.util.UUID;
 public interface NewsArticleRepository extends JpaRepository<NewsArticle, UUID> {
     Optional<NewsArticle> findBySlug(String slug);
     Page<NewsArticle> findByStatusOrderByPublishedAtDesc(NewsStatus status, Pageable pageable);
+    Page<NewsArticle> findByStatusOrderByCreatedAtDesc(NewsStatus status, Pageable pageable);
+    Page<NewsArticle> findAllByOrderByCreatedAtDesc(Pageable pageable);
     Page<NewsArticle> findByCategoryAndStatusOrderByPublishedAtDesc(String category, NewsStatus status, Pageable pageable);
     long countByStatus(NewsStatus status);
 

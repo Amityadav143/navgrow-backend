@@ -3,6 +3,10 @@
  * CIN: U74999WB2022PTC256012 · navgrow.org
  */
 package com.navgrow.controller;
+
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import com.navgrow.config.CacheConfig;
 import com.navgrow.entity.Product;
 import com.navgrow.exception.*;
 import com.navgrow.repository.ProductRepository;
@@ -23,6 +27,8 @@ import java.util.*;
 public class ProductController {
     private final ProductRepository repo;
     private final SlugUtil slugUtil;
+    private final com.navgrow.repository.CatalogItemRepository catalogRepo;
+    private final com.navgrow.service.AuditService audit;
 
     /** Columns the public list endpoint is allowed to sort by (prevents 500s from bad input). */
     private static final Set<String> SORTABLE = Set.of(
@@ -81,9 +87,30 @@ public class ProductController {
         return ResponseEntity.ok(repo.findByFeaturedTrueAndActiveTrue());
     }
 
+    /**
+     * Live "related products" — same category, active, excludes the product
+     * itself, featured first. Replaces the frontend's static-data fallback so
+     * admin-created products also get a related section.
+     */
+    @GetMapping("/{id}/related")
+    public ResponseEntity<List<Product>> related(@PathVariable UUID id,
+                                                 @RequestParam(defaultValue = "4") int limit) {
+        Product p = repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Product", id.toString()));
+        List<Product> rel = repo.findTop8ByCategoryAndActiveTrueAndIdNotOrderByFeaturedDescCreatedAtDesc(p.getCategory(), id);
+        return ResponseEntity.ok(rel.subList(0, Math.min(Math.max(limit, 1), rel.size())));
+    }
+
     @GetMapping("/categories")
+    @Cacheable(CacheConfig.PRODUCT_CATEGORIES)
     public ResponseEntity<List<String>> categories() {
-        return ResponseEntity.ok(repo.findAllCategories());
+        // Admin-defined categories (Catalog) first, then any legacy categories
+        // still present on products — merged and de-duplicated.
+        java.util.LinkedHashSet<String> merged = new java.util.LinkedHashSet<>();
+        catalogRepo.findByItemTypeAndActiveTrueOrderBySortOrderAscNameAsc(
+                com.navgrow.entity.CatalogItem.TYPE_PRODUCT_CATEGORY)
+            .forEach(c -> merged.add(c.getName()));
+        repo.findAllCategories().forEach(merged::add);
+        return ResponseEntity.ok(new java.util.ArrayList<>(merged));
     }
 
     @GetMapping("/{slug}")
@@ -94,17 +121,23 @@ public class ProductController {
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
+    @CacheEvict(value = CacheConfig.PRODUCT_CATEGORIES, allEntries = true)
     public ResponseEntity<Product> create(@Valid @RequestBody ProductRequest req) {
-        return ResponseEntity.status(201).body(repo.save(buildFromRequest(req)));
+        Product saved = repo.save(buildFromRequest(req));
+        audit.log("PRODUCT_CREATE", "Product", saved.getId().toString(), saved.getName());
+        return ResponseEntity.status(201).body(saved);
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
+    @CacheEvict(value = CacheConfig.PRODUCT_CATEGORIES, allEntries = true)
     public ResponseEntity<Product> update(@PathVariable UUID id, @Valid @RequestBody ProductRequest req) {
         Product p = repo.findById(id)
             .orElseThrow(() -> new ResourceNotFoundException("Product", id.toString()));
         applyToEntity(req, p);   // name/slug stay stable on update (slug not regenerated)
-        return ResponseEntity.ok(repo.save(p));
+        Product saved = repo.save(p);
+        audit.log("PRODUCT_UPDATE", "Product", saved.getId().toString(), saved.getName());
+        return ResponseEntity.ok(saved);
     }
 
     /**
@@ -116,6 +149,7 @@ public class ProductController {
     @PostMapping("/bulk")
     @PreAuthorize("hasRole('ADMIN')")
     @org.springframework.transaction.annotation.Transactional
+    @CacheEvict(value = CacheConfig.PRODUCT_CATEGORIES, allEntries = true)
     public ResponseEntity<Map<String, Object>> bulkCreate(@Valid @RequestBody List<ProductRequest> reqs) {
         if (reqs == null || reqs.isEmpty()) {
             throw new BadRequestException("No products provided for bulk upload");
@@ -128,6 +162,7 @@ public class ProductController {
             toSave.add(buildFromRequest(req));
         }
         List<Product> saved = repo.saveAll(toSave);
+        audit.log("PRODUCT_BULK_CREATE", "Product", null, saved.size() + " products imported via CSV");
         Map<String, Object> body = new HashMap<>();
         body.put("created", saved.size());
         body.put("products", saved);
@@ -152,6 +187,7 @@ public class ProductController {
             .orElseThrow(() -> new ResourceNotFoundException("Product", id.toString()));
         p.setActive(false);
         repo.save(p);
+        audit.log("PRODUCT_DEACTIVATE", "Product", id.toString(), p.getName());
         return ResponseEntity.noContent().build();
     }
 

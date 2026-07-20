@@ -5,6 +5,10 @@
  */
 package com.navgrow.controller;
 
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import com.navgrow.config.CacheConfig;
+
 import com.navgrow.entity.SiteSetting;
 import com.navgrow.repository.SiteSettingRepository;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +32,7 @@ public class SiteSettingController {
     private final SiteSettingRepository repo;
 
     @GetMapping
+    @Cacheable(CacheConfig.SITE_SETTINGS)
     public ResponseEntity<Map<String, String>> get() {
         String json = repo.findById(GLOBAL_KEY)
             .map(SiteSetting::getValue)
@@ -37,6 +42,7 @@ public class SiteSettingController {
 
     @PutMapping
     @PreAuthorize("hasRole('ADMIN')")
+    @CacheEvict(value = CacheConfig.SITE_SETTINGS, allEntries = true)
     public ResponseEntity<Map<String, String>> save(@RequestBody Map<String, Object> body) {
         // body is expected to contain {"settings": "<json string>"} or the raw object
         Object settings = body.getOrDefault("settings", body);

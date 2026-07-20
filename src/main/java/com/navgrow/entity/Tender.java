@@ -29,6 +29,14 @@ public class Tender {
     @Column(name = "value_max", precision = 12, scale = 2) private BigDecimal valueMax;
     @Column(nullable = false) private LocalDate deadline;
 
+    /** Direct link where applicants can view/apply for this tender (GeM, IREPS, etc.). */
+    @Column(name = "apply_link",   columnDefinition = "TEXT") private String applyLink;
+    @Column(name = "organization") private String organization;
+    private String location;
+    private String category;
+    @Column(name = "image_url",    columnDefinition = "TEXT") private String imageUrl;
+    @Column(name = "document_url", columnDefinition = "TEXT") private String documentUrl;
+
     @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false, columnDefinition = "tender_status")
     @Builder.Default

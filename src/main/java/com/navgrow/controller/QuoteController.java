@@ -25,6 +25,7 @@ import java.util.*;
 public class QuoteController {
     private final QuoteRequestRepository repo;
     private final EmailService emailService;
+    private final com.navgrow.service.AuditService audit;
 
     @Data
     public static class QuoteReq {
@@ -33,23 +34,44 @@ public class QuoteController {
         @NotBlank String phone;
         String company;
         @NotBlank String serviceType;
+        /** Human-readable service label (the calculator sends both id and label). */
+        String serviceName;
         String scope, duration, notes;
+        String industry, city, urgency;
         List<String> addons;
+        /** Legacy/alternate shape: a single comma-separated add-ons string. */
+        String addOns;
         BigDecimal estLow, estHigh;
+
+        List<String> resolvedAddons() {
+            if (addons != null && !addons.isEmpty()) return addons;
+            if (addOns != null && !addOns.isBlank())
+                return java.util.Arrays.stream(addOns.split(","))
+                    .map(String::trim).filter(sv -> !sv.isEmpty()).toList();
+            return java.util.List.of();
+        }
     }
 
     @PostMapping
     public ResponseEntity<Map<String,String>> submit(@Valid @RequestBody QuoteReq req) {
+        String serviceLabel = req.getServiceName() != null && !req.getServiceName().isBlank()
+            ? req.getServiceName() : req.getServiceType();
         QuoteRequest q = QuoteRequest.builder()
             .name(req.getName()).email(req.getEmail()).phone(req.getPhone())
-            .company(req.getCompany()).serviceType(req.getServiceType())
+            .company(req.getCompany()).serviceType(serviceLabel)
             .scope(req.getScope()).duration(req.getDuration())
-            .addons(req.getAddons()).notes(req.getNotes())
+            .industry(req.getIndustry()).city(req.getCity()).urgency(req.getUrgency())
+            .addons(req.resolvedAddons()).notes(req.getNotes())
             .estLow(req.getEstLow()).estHigh(req.getEstHigh())
             .build();
-        repo.save(q);
-        emailService.sendQuoteAcknowledgement(req.getEmail(), req.getName(), req.getServiceType());
-        return ResponseEntity.status(201).body(Map.of("message","Quote request received. We'll respond within 24 hours."));
+        QuoteRequest saved = repo.save(q);
+        emailService.sendQuoteAcknowledgement(req.getEmail(), req.getName(), serviceLabel);
+        emailService.sendQuoteAdminNotification(saved);
+        audit.log("QUOTE_SUBMITTED", "QuoteRequest", saved.getId().toString(),
+                  saved.getName() + " — " + serviceLabel);
+        return ResponseEntity.status(201).body(Map.of(
+            "message", "Quote request received. Our team will respond with a formal quotation within 24 hours.",
+            "reference", saved.getId().toString()));
     }
 
     @GetMapping

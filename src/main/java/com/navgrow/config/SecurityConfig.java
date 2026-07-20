@@ -38,6 +38,7 @@ public class SecurityConfig {
     private static final String[] PUBLIC_GET = {
         "/products/**", "/projects/**", "/news/**", "/gallery/**",
         "/tenders/**", "/jobs/**", "/coupons/validate",
+        "/uploads/**", "/catalog/**",
         "/actuator/health", "/actuator/info",
         "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**", "/v3/api-docs.yaml",
         "/swagger-resources/**", "/webjars/**",
@@ -45,14 +46,15 @@ public class SecurityConfig {
     };
 
     private static final String[] PUBLIC_POST = {
+        "/analytics/track",
         "/auth/**", "/contact", "/newsletter/**",
         "/quotes", "/orders", "/orders/payment/verify", "/rfqs",
         "/jobs/*/apply", "/products/*/reviews",
-        "/chat", "/analytics/events"
+        "/chat", "/analytics/events", "/catalogue/leads"
     };
 
     private static final String[] PUBLIC_GET_EXTRA = {
-        "/chat/starters", "/site-settings"
+        "/chat/starters", "/site-settings", "/catalogue/download"
     };
 
     private static final String[] PUBLIC_ANY = {
@@ -68,6 +70,13 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
             .csrf(AbstractHttpConfigurer::disable)
+            // Explicit response-security headers. (HSTS + CSP for the SPA are
+            // set at nginx, which owns TLS and serves the frontend.)
+            .headers(h -> h
+                .frameOptions(f -> f.deny())
+                .contentTypeOptions(org.springframework.security.config.Customizer.withDefaults())
+                .referrerPolicy(r -> r.policy(org.springframework.security.web.header.writers
+                    .ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN)))
             .cors(cors -> {})
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
@@ -83,6 +92,10 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.PUT,    "/projects/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
                 .requestMatchers(HttpMethod.POST,   "/gallery/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
                 .requestMatchers(HttpMethod.PUT,    "/gallery/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
+                .requestMatchers(HttpMethod.POST,   "/files/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
+                .requestMatchers(HttpMethod.POST,   "/catalog/**").hasAnyRole("ADMIN","MANAGER")
+                .requestMatchers(HttpMethod.PUT,    "/catalog/**").hasAnyRole("ADMIN","MANAGER")
+                .requestMatchers(HttpMethod.DELETE, "/catalog/**").hasAnyRole("ADMIN","MANAGER")
                 .requestMatchers(HttpMethod.PUT,    "/site-settings/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
                 .requestMatchers(HttpMethod.POST,   "/site-settings/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
                 // Only ADMIN manages orders, coupons, users

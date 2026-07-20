@@ -23,6 +23,7 @@ import java.util.*;
 public class JobController {
     private final JobListingRepository jobRepo;
     private final JobApplicationRepository appRepo;
+    private final com.navgrow.service.AuditService audit;
 
     @Data public static class JobReq {
         @NotBlank String title, department, location;
@@ -30,6 +31,17 @@ public class JobController {
         @NotBlank String description;
         List<String> skills;
         JobStatus status;
+        java.math.BigDecimal salaryFrom, salaryTo;
+        Integer openings;
+        java.time.LocalDateTime applicationDeadline;
+        /** Admin UI convenience flag — maps to status OPEN/CLOSED when status is absent. */
+        Boolean active;
+
+        JobStatus resolvedStatus(JobStatus fallback) {
+            if (status != null) return status;
+            if (active != null) return active ? JobStatus.OPEN : JobStatus.CLOSED;
+            return fallback;
+        }
     }
 
     @Data public static class ApplicationReq {
@@ -41,6 +53,12 @@ public class JobController {
 
     @GetMapping public ResponseEntity<List<JobListing>> listOpen() { return ResponseEntity.ok(jobRepo.findByStatusOrderByCreatedAtDesc(JobStatus.OPEN)); }
 
+    /** Admin listing — returns jobs in every status so closed/paused roles stay manageable. */
+    @GetMapping("/manage") @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    public ResponseEntity<List<JobListing>> listAll() {
+        return ResponseEntity.ok(jobRepo.findAll(org.springframework.data.domain.Sort.by("createdAt").descending()));
+    }
+
     @GetMapping("/{id}") public ResponseEntity<JobListing> get(@PathVariable UUID id) {
         return ResponseEntity.ok(jobRepo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Job", id.toString())));
     }
@@ -51,8 +69,13 @@ public class JobController {
             .jobType(req.getJobType() != null ? req.getJobType() : "Full-time")
             .location(req.getLocation()).experience(req.getExperience())
             .description(req.getDescription()).skills(req.getSkills())
-            .status(req.getStatus() != null ? req.getStatus() : JobStatus.OPEN).build();
-        return ResponseEntity.status(201).body(jobRepo.save(j));
+            .salaryFrom(req.getSalaryFrom()).salaryTo(req.getSalaryTo())
+            .openings(req.getOpenings() != null && req.getOpenings() > 0 ? req.getOpenings() : 1)
+            .applicationDeadline(req.getApplicationDeadline())
+            .status(req.resolvedStatus(JobStatus.OPEN)).build();
+        JobListing saved = jobRepo.save(j);
+        audit.log("JOB_CREATE", "JobListing", saved.getId().toString(), saved.getTitle());
+        return ResponseEntity.status(201).body(saved);
     }
 
     @PutMapping("/{id}") @PreAuthorize("hasRole('ADMIN')")
@@ -65,8 +88,14 @@ public class JobController {
         if (req.getExperience() != null) j.setExperience(req.getExperience());
         j.setDescription(req.getDescription());
         if (req.getSkills()     != null) j.setSkills(req.getSkills());
-        if (req.getStatus()     != null) j.setStatus(req.getStatus());
-        return ResponseEntity.ok(jobRepo.save(j));
+        if (req.getSalaryFrom() != null) j.setSalaryFrom(req.getSalaryFrom());
+        if (req.getSalaryTo()   != null) j.setSalaryTo(req.getSalaryTo());
+        if (req.getOpenings()   != null && req.getOpenings() > 0) j.setOpenings(req.getOpenings());
+        if (req.getApplicationDeadline() != null) j.setApplicationDeadline(req.getApplicationDeadline());
+        j.setStatus(req.resolvedStatus(j.getStatus()));
+        JobListing saved = jobRepo.save(j);
+        audit.log("JOB_UPDATE", "JobListing", saved.getId().toString(), saved.getTitle());
+        return ResponseEntity.ok(saved);
     }
 
     @PatchMapping("/{id}/toggle") @PreAuthorize("hasRole('ADMIN')")
@@ -74,12 +103,16 @@ public class JobController {
         JobListing j = jobRepo.findById(id)
             .orElseThrow(() -> new ResourceNotFoundException("Job", id.toString()));
         j.setStatus(j.getStatus() == JobStatus.OPEN ? JobStatus.CLOSED : JobStatus.OPEN);
-        return ResponseEntity.ok(jobRepo.save(j));
+        JobListing saved = jobRepo.save(j);
+        audit.log("JOB_TOGGLE", "JobListing", saved.getId().toString(),
+                  saved.getTitle() + " -> " + saved.getStatus());
+        return ResponseEntity.ok(saved);
     }
 
     @DeleteMapping("/{id}") @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         jobRepo.deleteById(id);
+        audit.log("JOB_DELETE", "JobListing", id.toString(), null);
         return ResponseEntity.noContent().build();
     }
 
@@ -92,6 +125,8 @@ public class JobController {
             .name(req.getName()).email(req.getEmail()).phone(req.getPhone())
             .experience(req.getExperience()).coverNote(req.getCoverNote()).build();
         appRepo.save(app);
+        audit.log("JOB_APPLICATION", "JobApplication", app.getId() != null ? app.getId().toString() : null,
+                  req.getName() + " -> " + job.getTitle());
         return ResponseEntity.status(201).body(Map.of("message","Application submitted. We'll reach out within 5 business days."));
     }
 

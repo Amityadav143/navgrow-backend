@@ -21,11 +21,13 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleNotFound(ResourceNotFoundException ex) {
+        log.warn("404 Not Found: {}", ex.getMessage());
         return buildError(HttpStatus.NOT_FOUND, ex.getMessage());
     }
 
     @ExceptionHandler(BadRequestException.class)
     public ResponseEntity<Map<String, Object>> handleBadRequest(BadRequestException ex) {
+        log.warn("400 Bad Request: {}", ex.getMessage());
         return buildError(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
@@ -36,6 +38,7 @@ public class GlobalExceptionHandler {
             String field = e instanceof FieldError fe ? fe.getField() : e.getObjectName();
             errors.put(field, e.getDefaultMessage());
         });
+        log.warn("400 Validation failed: {}", errors);
         Map<String, Object> body = buildErrorBody(HttpStatus.BAD_REQUEST, "Validation failed");
         body.put("fieldErrors", errors);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
@@ -49,22 +52,26 @@ public class GlobalExceptionHandler {
             String target = ife.getTargetType() != null ? ife.getTargetType().getSimpleName() : "value";
             msg = "Invalid value '" + ife.getValue() + "' for field of type " + target + ".";
         }
+        log.warn("400 Unreadable body: {}", msg);
         return buildError(HttpStatus.BAD_REQUEST, msg);
     }
 
     @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
     public ResponseEntity<Map<String, Object>> handleConstraint(jakarta.validation.ConstraintViolationException ex) {
+        log.warn("400 Constraint violation: {}", ex.getMessage());
         return buildError(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException ex) {
+        log.warn("403 Access denied: {}", ex.getMessage());
         return buildError(HttpStatus.FORBIDDEN, "Access denied");
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneral(Exception ex) {
-        log.error("Unexpected error: ", ex);
+        String requestId = org.slf4j.MDC.get("requestId");
+        log.error("Unexpected error (ref {}): ", requestId, ex);
         return buildError(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
     }
 

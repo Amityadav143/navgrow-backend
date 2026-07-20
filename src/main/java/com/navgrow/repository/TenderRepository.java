@@ -17,4 +17,5 @@ import java.util.UUID;
 public interface TenderRepository extends JpaRepository<Tender, UUID> {
     List<Tender> findByStatusOrderByDeadlineAsc(TenderStatus status);
     List<Tender> findByFeaturedTrueAndStatusOrderByDeadlineAsc(TenderStatus status);
+    boolean existsByRefNumber(String refNumber);
 }

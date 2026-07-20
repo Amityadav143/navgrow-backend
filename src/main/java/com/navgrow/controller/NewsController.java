@@ -26,6 +26,7 @@ import java.util.*;
 public class NewsController {
     private final NewsArticleRepository repo;
     private final SlugUtil slugUtil;
+    private final com.navgrow.service.AuditService audit;
 
     @Data public static class NewsReq {
         @NotBlank String title;
@@ -40,8 +41,9 @@ public class NewsController {
             @RequestParam(required=false) String category,
             @RequestParam(required=false) String q,
             @RequestParam(required=false) NewsStatus status) {
-        // Default to PUBLISHED for public endpoint; admin can pass DRAFT/ALL
-        NewsStatus effectiveStatus = status != null ? status : NewsStatus.PUBLISHED;
+        // Public endpoint always serves PUBLISHED content only. Draft/archived
+        // browsing for the admin panel lives at GET /news/manage (secured).
+        NewsStatus effectiveStatus = NewsStatus.PUBLISHED;
         Pageable p = PageRequest.of(com.navgrow.util.PageUtil.safePage(page),
             com.navgrow.util.PageUtil.safeSize(size), Sort.by("publishedAt").descending());
         if (q != null && !q.isBlank()) {
@@ -52,6 +54,23 @@ public class NewsController {
         return ResponseEntity.ok(category != null
             ? repo.findByCategoryAndStatusOrderByPublishedAtDesc(category, effectiveStatus, p)
             : repo.findByStatusOrderByPublishedAtDesc(effectiveStatus, p));
+    }
+
+
+    /**
+     * Admin/editor listing — every status, newest first, so drafts no longer
+     * "disappear" from the panel the moment they are saved. (The public GET
+     * defaults to PUBLISHED, which previously hid drafts everywhere.)
+     */
+    @GetMapping("/manage") @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER') or hasRole('EDITOR')")
+    public ResponseEntity<Page<NewsArticle>> manage(
+            @RequestParam(defaultValue="0") int page, @RequestParam(defaultValue="50") int size,
+            @RequestParam(required=false) NewsStatus status) {
+        Pageable p = PageRequest.of(com.navgrow.util.PageUtil.safePage(page),
+            com.navgrow.util.PageUtil.safeSize(size), Sort.by("createdAt").descending());
+        return ResponseEntity.ok(status != null
+            ? repo.findByStatusOrderByCreatedAtDesc(status, p)
+            : repo.findAllByOrderByCreatedAtDesc(p));
     }
 
     @GetMapping("/{slug}") public ResponseEntity<NewsArticle> get(@PathVariable String slug) {
@@ -69,7 +88,10 @@ public class NewsController {
             .imageUrl(req.getImageUrl()).imageUrls(req.getImageUrls()).authorName(req.getAuthorName() != null ? req.getAuthorName() : "Navgrow Team")
             .tags(req.getTags()).status(st)
             .publishedAt(st == NewsStatus.PUBLISHED ? LocalDateTime.now() : null).build();
-        return ResponseEntity.status(201).body(repo.save(a));
+        NewsArticle saved = repo.save(a);
+        audit.log(st == NewsStatus.PUBLISHED ? "NEWS_PUBLISH" : "NEWS_CREATE_DRAFT",
+                  "NewsArticle", saved.getId().toString(), saved.getTitle());
+        return ResponseEntity.status(201).body(saved);
     }
 
     @PutMapping("/{id}") @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
@@ -81,9 +103,16 @@ public class NewsController {
             a.setStatus(req.getStatus());
             if (req.getStatus() == NewsStatus.PUBLISHED && a.getPublishedAt() == null) a.setPublishedAt(LocalDateTime.now());
         }
-        return ResponseEntity.ok(repo.save(a));
+        NewsArticle saved = repo.save(a);
+        audit.log("NEWS_UPDATE", "NewsArticle", saved.getId().toString(),
+                  saved.getTitle() + " [" + saved.getStatus() + "]");
+        return ResponseEntity.ok(saved);
     }
 
     @DeleteMapping("/{id}") @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> delete(@PathVariable UUID id) { repo.deleteById(id); return ResponseEntity.noContent().build(); }
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        repo.deleteById(id);
+        audit.log("NEWS_DELETE", "NewsArticle", id.toString(), null);
+        return ResponseEntity.noContent().build();
+    }
 }

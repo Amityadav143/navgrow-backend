@@ -22,6 +22,7 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     Optional<Product> findBySku(String sku);
     Page<Product> findByActiveTrue(Pageable pageable);
     Page<Product> findByCategoryAndActiveTrue(String category, Pageable pageable);
+    List<Product> findTop8ByCategoryAndActiveTrueAndIdNotOrderByFeaturedDescCreatedAtDesc(String category, UUID id);
     List<Product> findByFeaturedTrueAndActiveTrue();
 
     @Query("SELECT p FROM Product p WHERE p.active = true AND " +

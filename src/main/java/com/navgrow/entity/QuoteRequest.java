@@ -34,6 +34,10 @@ public class QuoteRequest {
     @Column(columnDefinition = "text[]")
     private List<String> addons;
 
+    private String industry;
+    private String city;
+    private String urgency;
+
     @Column(name = "est_low",  precision = 12, scale = 2) private BigDecimal estLow;
     @Column(name = "est_high", precision = 12, scale = 2) private BigDecimal estHigh;
     @Column(columnDefinition = "TEXT") private String notes;

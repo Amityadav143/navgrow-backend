@@ -29,8 +29,21 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     long countByStatus(OrderStatus status);
     long countByPaymentStatus(PaymentStatus paymentStatus);
 
-    @Query("SELECT COALESCE(SUM(o.grandTotal), 0) FROM Order o WHERE o.paymentStatus = com.navgrow.enums.PaymentStatus.PAID AND o.createdAt >= :from")
-    BigDecimal sumRevenueFrom(@Param("from") LocalDateTime from);
+    /**
+     * NOTE: the payment status MUST be bound as a query parameter, never written
+     * as a JPQL enum literal. With Postgres native enums (SqlTypes.NAMED_ENUM),
+     * Hibernate renders the literal `com.navgrow.enums.PaymentStatus.PAID` as
+     * `'PAID'::PaymentStatus` (the Java class name) instead of the real DB type
+     * `payment_status`, which fails with:
+     *   "operator does not exist: payment_status = paymentstatus".
+     * Parameter binding goes through the enum JdbcType and casts correctly.
+     */
+    @Query("SELECT COALESCE(SUM(o.grandTotal), 0) FROM Order o WHERE o.paymentStatus = :status AND o.createdAt >= :from")
+    BigDecimal sumRevenueByStatusFrom(@Param("status") PaymentStatus status, @Param("from") LocalDateTime from);
+
+    default BigDecimal sumRevenueFrom(LocalDateTime from) {
+        return sumRevenueByStatusFrom(PaymentStatus.PAID, from);
+    }
 
     @Query("SELECT o FROM Order o WHERE o.createdAt >= :from ORDER BY o.createdAt DESC")
     List<Order> findRecentOrders(@Param("from") LocalDateTime from);

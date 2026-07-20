@@ -85,6 +85,125 @@ public class EmailService {
         }
     }
 
+    // ── Quote request → admin notification ────────────────────────────────────
+    /**
+     * Emails the office inbox whenever a calculator estimate is submitted, so the
+     * team is alerted even before opening the admin dashboard.
+     */
+    @Async
+    public void sendQuoteAdminNotification(com.navgrow.entity.QuoteRequest q) {
+        try {
+            var mime   = mailSender.createMimeMessage();
+            var helper = new MimeMessageHelper(mime, true, "UTF-8");
+            helper.setTo(contactEmail);
+            helper.setSubject("[New Quote Request] " + q.getServiceType() + " — " + q.getName());
+            String est = q.getEstLow() != null
+                ? "₹" + q.getEstLow().toPlainString() + " – ₹" + (q.getEstHigh() != null ? q.getEstHigh().toPlainString() : "?")
+                : "—";
+            String addons = q.getAddons() != null && !q.getAddons().isEmpty() ? String.join(", ", q.getAddons()) : "None";
+            String html = """
+                <div style="font-family:Arial,sans-serif;max-width:560px">
+                  <h2 style="color:#1e3a8a">New Quote Request</h2>
+                  <table style="border-collapse:collapse;width:100%%;font-size:14px">
+                    %s
+                  </table>
+                  <p style="margin-top:16px">
+                    <a href="%s/admin/quotes" style="background:#1e3a8a;color:#fff;padding:10px 18px;
+                       border-radius:8px;text-decoration:none;font-weight:bold">Open in Admin Dashboard</a>
+                  </p>
+                </div>""".formatted(
+                    row("Name", q.getName()) + row("Email", q.getEmail()) + row("Phone", q.getPhone())
+                    + row("Company", q.getCompany()) + row("Industry", q.getIndustry()) + row("City", q.getCity())
+                    + row("Service", q.getServiceType()) + row("Scope", q.getScope()) + row("Duration", q.getDuration())
+                    + row("Add-ons", addons) + row("Urgency", q.getUrgency())
+                    + row("Estimate", est) + row("Notes", q.getNotes()),
+                    frontendUrl);
+            helper.setText(html, true);
+            mailSender.send(mime);
+            log.info("Quote admin notification sent for {}", q.getEmail());
+        } catch (Exception e) {
+            log.error("Failed to send quote admin notification: {}", e.getMessage());
+        }
+    }
+
+    private String row(String label, String value) {
+        if (value == null || value.isBlank()) return "";
+        return "<tr><td style=\"padding:6px 10px;border:1px solid #e5e7eb;font-weight:bold;width:130px\">"
+             + label + "</td><td style=\"padding:6px 10px;border:1px solid #e5e7eb\">"
+             + org.springframework.web.util.HtmlUtils.htmlEscape(value) + "</td></tr>";
+    }
+
+    // ── Catalogue download → visitor + admin ──────────────────────────────────
+    /** Sends the requester a friendly note with a link back to the catalogue. */
+    @Async
+    public void sendCatalogueToLead(String toEmail, String toName) {
+        try {
+            var mime   = mailSender.createMimeMessage();
+            var helper = new MimeMessageHelper(mime, true, "UTF-8");
+            helper.setTo(toEmail);
+            helper.setSubject("Your Navgrow Company Profile & Catalogue");
+            String html = """
+                <div style="font-family:Arial,sans-serif;max-width:560px">
+                  <h2 style="color:#1e3a8a">Thank you, %s!</h2>
+                  <p style="font-size:14px;color:#334155">
+                    Thanks for your interest in Navgrow Engineering Service Pvt. Ltd. Your download
+                    should have started automatically. If you need it again, you can download the
+                    latest Company Profile &amp; Capabilities catalogue any time using the button below.
+                  </p>
+                  <p style="margin:20px 0">
+                    <a href="%s/catalogue" style="background:#1e3a8a;color:#fff;padding:11px 20px;
+                       border-radius:8px;text-decoration:none;font-weight:bold">Download the Catalogue</a>
+                  </p>
+                  <p style="font-size:13px;color:#64748b">
+                    Have a project in mind? Reply to this email or reach us at
+                    <a href="mailto:%s">%s</a> and our team will get back within 24 hours.
+                  </p>
+                  <p style="font-size:12px;color:#94a3b8;margin-top:24px">
+                    Navgrow Engineering Service Pvt. Ltd.<br/>
+                    Railway · Industrial · Civil · Sustainability
+                  </p>
+                </div>""".formatted(
+                    org.springframework.web.util.HtmlUtils.htmlEscape(toName),
+                    frontendUrl, contactEmail, contactEmail);
+            helper.setText(html, true);
+            mailSender.send(mime);
+            log.info("Catalogue email sent to lead {}", toEmail);
+        } catch (Exception e) {
+            log.error("Failed to send catalogue email: {}", e.getMessage());
+        }
+    }
+
+    /** Alerts the office inbox that a new catalogue lead was captured. */
+    @Async
+    public void sendCatalogueLeadNotification(com.navgrow.entity.CatalogueLead lead) {
+        try {
+            var mime   = mailSender.createMimeMessage();
+            var helper = new MimeMessageHelper(mime, true, "UTF-8");
+            helper.setTo(contactEmail);
+            helper.setSubject("[New Catalogue Lead] " + lead.getName());
+            String html = """
+                <div style="font-family:Arial,sans-serif;max-width:560px">
+                  <h2 style="color:#1e3a8a">New Catalogue Download Lead</h2>
+                  <table style="border-collapse:collapse;width:100%%;font-size:14px">
+                    %s
+                  </table>
+                  <p style="margin-top:16px">
+                    <a href="%s/admin/catalogue-leads" style="background:#1e3a8a;color:#fff;padding:10px 18px;
+                       border-radius:8px;text-decoration:none;font-weight:bold">Open in Admin Dashboard</a>
+                  </p>
+                </div>""".formatted(
+                    row("Name", lead.getName()) + row("Mobile", lead.getMobile())
+                    + row("Email", lead.getEmail()) + row("Company", lead.getCompany())
+                    + row("City", lead.getCity()) + row("Requirement", lead.getRequirement()),
+                    frontendUrl);
+            helper.setText(html, true);
+            mailSender.send(mime);
+            log.info("Catalogue lead notification sent for {}", lead.getEmail());
+        } catch (Exception e) {
+            log.error("Failed to send catalogue lead notification: {}", e.getMessage());
+        }
+    }
+
     // ── Password reset ────────────────────────────────────────────────────────
     @Async
     public void sendPasswordResetEmail(String toEmail, String toName, String token) {
