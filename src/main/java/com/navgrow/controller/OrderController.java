@@ -45,6 +45,9 @@ public class OrderController {
     @Value("${razorpay.key-secret}")
     private String razorpaySecret;
 
+    @Value("${razorpay.key-id}")
+    private String razorpayKeyId;
+
     @Value("${razorpay.currency}")
     private String currency;
 
@@ -167,6 +170,10 @@ public class OrderController {
                 "orderId",        order.getId(),
                 "orderNumber",    order.getOrderNumber(),
                 "razorpayOrderId", rzpOrder.get("id"),
+                // Return the SAME key that created this order, so the checkout
+                // widget can never be initialised with a mismatched key (which
+                // makes Razorpay report "The id provided does not exist").
+                "razorpayKeyId",  razorpayKeyId,
                 "amount",         amountPaise,
                 "currency",       currency,
                 "grandTotal",     grandTotal

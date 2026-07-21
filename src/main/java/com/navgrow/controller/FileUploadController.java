@@ -19,7 +19,6 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import javax.imageio.ImageIO;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.*;
 import java.util.Arrays;
 import java.util.Locale;
@@ -66,16 +65,24 @@ public class FileUploadController {
             throw new BadRequestException("Unsupported file type '." + ext + "'. Allowed: "
                 + String.join(", ", IMAGE_EXT) + ", " + String.join(", ", DOC_EXT) + ".");
 
+        // Read the upload ONCE into memory. A MultipartFile's InputStream must not be
+        // consumed twice: validating with ImageIO.read(getInputStream()) and then
+        // copying from getInputStream() again can write a 0-byte / corrupt file for
+        // small (in-memory) uploads. Validate and persist from the same byte[].
+        byte[] bytes = file.getBytes();
+        if (bytes.length == 0) throw new BadRequestException("The uploaded file is empty.");
+
         // Content sniffing — the extension alone is not trusted.
-        try (InputStream in = file.getInputStream()) {
-            if (isImage) {
-                if (ImageIO.read(in) == null)
-                    throw new BadRequestException("The file does not appear to be a valid image.");
-            } else {
-                byte[] head = in.readNBytes(5);
-                if (head.length < 5 || !"%PDF-".equals(new String(head, java.nio.charset.StandardCharsets.US_ASCII)))
-                    throw new BadRequestException("The file does not appear to be a valid PDF.");
-            }
+        if (isImage) {
+            java.awt.image.BufferedImage img =
+                ImageIO.read(new java.io.ByteArrayInputStream(bytes));
+            if (img == null)
+                throw new BadRequestException("The file does not appear to be a valid image.");
+        } else {
+            if (bytes.length < 5
+                || !"%PDF-".equals(new String(Arrays.copyOfRange(bytes, 0, 5),
+                                              java.nio.charset.StandardCharsets.US_ASCII)))
+                throw new BadRequestException("The file does not appear to be a valid PDF.");
         }
 
         Path dir = Paths.get(uploadDir).toAbsolutePath().normalize();
@@ -83,20 +90,23 @@ public class FileUploadController {
         String storedName = UUID.randomUUID() + "." + ext;
         Path target = dir.resolve(storedName).normalize();
         if (!target.startsWith(dir)) throw new BadRequestException("Invalid file name.");
-        try (InputStream in = file.getInputStream()) {
-            Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
-        }
+        Files.write(target, bytes, StandardOpenOption.CREATE_NEW);
 
+        // Build an absolute URL from the *incoming request* so it points at the
+        // API's public host (e.g. https://api.navgrow.org/api/uploads/<name>).
+        // nginx forwards Host + X-Forwarded-Proto, so this resolves correctly in
+        // production; it also works on the Vite dev server. We build it explicitly
+        // from forwarded headers to be robust behind the proxy.
         String url = ServletUriComponentsBuilder.fromCurrentContextPath()
             .path("/uploads/").path(storedName).toUriString();
 
-        log.info("File uploaded: {} ({} bytes) -> {}", original, file.getSize(), storedName);
+        log.info("File uploaded: {} ({} bytes) -> {}", original, bytes.length, storedName);
         audit.log("FILE_UPLOAD", "File", storedName, original);
         return ResponseEntity.ok(Map.of(
             "url", url,
             "fileName", storedName,
             "originalName", original,
-            "size", file.getSize(),
+            "size", bytes.length,
             "kind", isImage ? "image" : "document"
         ));
     }
