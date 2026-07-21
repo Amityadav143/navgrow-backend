@@ -29,6 +29,7 @@ public class NewsArticle {
     @Column(name = "image_url", columnDefinition = "TEXT") private String imageUrl;
     /** Additional gallery image URLs, one per line. */
     @Column(name = "image_urls", columnDefinition = "TEXT") private String imageUrls;
+    @Builder.Default
     @Column(name = "author_name") private String authorName = "Navgrow Team";
 
     @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.NAMED_ENUM)

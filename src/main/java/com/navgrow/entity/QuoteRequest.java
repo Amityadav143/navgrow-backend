@@ -50,7 +50,9 @@ public class QuoteRequest {
     @Column(name = "quoted_amount", precision = 12, scale = 2) private BigDecimal quotedAmount;
     @Column(name = "assigned_to") private String assignedTo;
 
+    @Builder.Default
     @Column(name = "created_at", updatable = false) private LocalDateTime createdAt = LocalDateTime.now();
+    @Builder.Default
     @Column(name = "updated_at") private LocalDateTime updatedAt = LocalDateTime.now();
     @PreUpdate public void preUpdate() { this.updatedAt = LocalDateTime.now(); }
 }

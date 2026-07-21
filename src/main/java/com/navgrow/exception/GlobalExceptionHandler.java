@@ -68,6 +68,14 @@ public class GlobalExceptionHandler {
         return buildError(HttpStatus.FORBIDDEN, "Access denied");
     }
 
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    public ResponseEntity<Map<String, Object>> handleMaxUpload(
+            org.springframework.web.multipart.MaxUploadSizeExceededException ex) {
+        log.warn("413 Upload too large: {}", ex.getMessage());
+        return buildError(HttpStatus.PAYLOAD_TOO_LARGE,
+                "File is too large. Please upload an image under 8 MB.");
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneral(Exception ex) {
         String requestId = org.slf4j.MDC.get("requestId");

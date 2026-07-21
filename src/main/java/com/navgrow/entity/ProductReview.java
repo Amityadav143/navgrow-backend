@@ -43,8 +43,10 @@ public class ProductReview {
     private String body;
 
     @Column(name = "is_approved")
+    @Builder.Default
     private boolean approved = false;
 
     @Column(name = "created_at", updatable = false)
+    @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
 }

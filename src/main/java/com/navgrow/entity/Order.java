@@ -75,8 +75,17 @@ public class Order {
     @Builder.Default
     private List<OrderItem> items = new ArrayList<>();
 
+    @Builder.Default
     @Column(name = "created_at", updatable = false) private LocalDateTime createdAt = LocalDateTime.now();
+    @Builder.Default
     @Column(name = "updated_at") private LocalDateTime updatedAt = LocalDateTime.now();
+
+    /** Safety net: guarantees timestamps are set even if an object is built without them. */
+    @PrePersist public void prePersist() {
+        LocalDateTime now = LocalDateTime.now();
+        if (this.createdAt == null) this.createdAt = now;
+        if (this.updatedAt == null) this.updatedAt = now;
+    }
 
     @PreUpdate public void preUpdate() { this.updatedAt = LocalDateTime.now(); }
 }

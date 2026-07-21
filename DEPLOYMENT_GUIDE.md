@@ -196,6 +196,11 @@ server {
     ssl_certificate     /etc/letsencrypt/live/api.navgrow.org/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/api.navgrow.org/privkey.pem;
 
+    # Max upload size — MUST be >= Spring's max-request-size (50MB) or uploads fail
+    # with "413 Request Entity Too Large" at the proxy before reaching the app.
+    # The app itself caps individual files at 8MB (FileUploadController).
+    client_max_body_size 50M;
+
     # Security headers
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;

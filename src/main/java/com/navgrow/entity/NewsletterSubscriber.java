@@ -19,7 +19,9 @@ public class NewsletterSubscriber {
 
     @Column(unique = true, nullable = false) private String email;
     private String name;
+    @Builder.Default
     @Column(name = "is_active") private boolean active = true;
+    @Builder.Default
     @Column(name = "subscribed_at", updatable = false) private LocalDateTime subscribedAt = LocalDateTime.now();
     @Column(name = "unsubscribed_at") private LocalDateTime unsubscribedAt;
 }

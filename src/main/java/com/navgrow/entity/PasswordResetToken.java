@@ -30,9 +30,11 @@ public class PasswordResetToken {
     private LocalDateTime expiresAt;
 
     @Column(nullable = false)
+    @Builder.Default
     private boolean used = false;
 
     @Column(name = "created_at", updatable = false)
+    @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
 
     public boolean isExpired() { return LocalDateTime.now().isAfter(expiresAt); }

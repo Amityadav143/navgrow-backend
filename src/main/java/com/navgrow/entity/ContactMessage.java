@@ -24,7 +24,9 @@ public class ContactMessage {
     @Column(nullable = false) private String subject;
     @Column(nullable = false, columnDefinition = "TEXT") private String message;
 
+    @Builder.Default
     @Column(name = "is_read") private boolean read = false;
     @Column(name = "replied_at") private LocalDateTime repliedAt;
+    @Builder.Default
     @Column(name = "created_at", updatable = false) private LocalDateTime createdAt = LocalDateTime.now();
 }
