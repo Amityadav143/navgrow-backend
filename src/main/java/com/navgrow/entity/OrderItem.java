@@ -34,6 +34,11 @@ public class OrderItem {
     @Column(name = "unit_price", nullable = false, precision = 12, scale = 2)
     private BigDecimal unitPrice;
 
+    /** HSN/SAC snapshot taken at the time of sale, so a reissued invoice always
+     *  shows the classification that actually applied to this transaction. */
+    @Column(name = "hsn_code", length = 12)
+    private String hsnCode;
+
     @Column(name = "gst_rate", precision = 5, scale = 2)
     private BigDecimal gstRate;
 

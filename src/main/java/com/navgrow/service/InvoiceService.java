@@ -66,6 +66,9 @@ public class InvoiceService {
             rows.append("<tr>")
                 .append(td(String.valueOf(idx++)))
                 .append(tdLeft(esc(it.getProductName())))
+                // HSN/SAC is a statutory column on a GST tax invoice.
+                .append(td(it.getHsnCode() != null && !it.getHsnCode().isBlank()
+                           ? esc(it.getHsnCode()) : "&mdash;"))
                 .append(td(it.getQuantity().toString()))
                 .append(td(money(it.getUnitPrice())))
                 .append(td(money(taxable)))
@@ -100,7 +103,7 @@ public class InvoiceService {
               .meta { display:flex; justify-content:space-between; padding:20px 28px; border-bottom:1px solid #eee; gap:24px; }
               .meta .box { font-size:12.5px; line-height:1.6; }
               .meta .box b { color:#1e3a8a; display:block; margin-bottom:4px; font-size:11px; text-transform:uppercase; letter-spacing:.5px; }
-              table { width:100%; border-collapse:collapse; }
+              table { width:100%%; border-collapse:collapse; }
               thead th { background:#f1f5f9; color:#334155; font-size:11px; text-transform:uppercase; letter-spacing:.4px; padding:10px 8px; border-bottom:2px solid #cbd5e1; }
               tbody td { padding:9px 8px; border-bottom:1px solid #eee; text-align:center; }
               tbody td.l { text-align:left; }
@@ -148,7 +151,7 @@ public class InvoiceService {
 
               <table>
                 <thead><tr>
-                  <th>#</th><th style="text-align:left">Description</th><th>Qty</th>
+                  <th>#</th><th style="text-align:left">Description</th><th>HSN/SAC</th><th>Qty</th>
                   <th>Rate</th><th>Taxable</th>%s<th>Amount</th>
                 </tr></thead>
                 <tbody>%s</tbody>

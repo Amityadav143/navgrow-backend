@@ -43,6 +43,7 @@ public class EmailService {
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
+            helper.setFrom(fromEmail);
             helper.setTo(contactEmail);
             helper.setSubject("[Website Enquiry] " + subject);
             helper.setText(buildContactHtml(fromName, fromEmail, subject, message), true);
@@ -60,6 +61,7 @@ public class EmailService {
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
+            helper.setFrom(fromEmail);
             helper.setTo(toEmail);
             helper.setSubject("Order Confirmed – " + orderNumber + " | Navgrow Engineering");
             helper.setText(buildOrderHtml(toName, orderNumber, total), true);
@@ -76,6 +78,7 @@ public class EmailService {
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
+            helper.setFrom(fromEmail);
             helper.setTo(toEmail);
             helper.setSubject("Quote Request Received – Navgrow Engineering");
             helper.setText(buildQuoteHtml(toName, serviceType), true);
@@ -95,6 +98,7 @@ public class EmailService {
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
+            helper.setFrom(fromEmail);
             helper.setTo(contactEmail);
             helper.setSubject("[New Quote Request] " + q.getServiceType() + " — " + q.getName());
             String est = q.getEstLow() != null
@@ -140,6 +144,7 @@ public class EmailService {
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
+            helper.setFrom(fromEmail);
             helper.setTo(toEmail);
             helper.setSubject("Your Navgrow Company Profile & Catalogue");
             String html = """
@@ -179,6 +184,7 @@ public class EmailService {
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
+            helper.setFrom(fromEmail);
             helper.setTo(contactEmail);
             helper.setSubject("[New Catalogue Lead] " + lead.getName());
             String html = """
@@ -210,6 +216,7 @@ public class EmailService {
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
+            helper.setFrom(fromEmail);
             helper.setTo(toEmail);
             helper.setSubject("Reset Your Password — Navgrow Engineering");
             String resetUrl = frontendUrl + "/reset-password?token=" + token;

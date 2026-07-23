@@ -54,7 +54,7 @@ public class SecurityConfig {
     };
 
     private static final String[] PUBLIC_GET_EXTRA = {
-        "/chat/starters", "/site-settings", "/catalogue/download"
+        "/chat/starters", "/site-settings", "/catalogue/download", "/delivery/check"
     };
 
     private static final String[] PUBLIC_ANY = {

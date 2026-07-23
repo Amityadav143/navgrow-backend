@@ -39,6 +39,11 @@ public class Product {
     @Column(precision = 12, scale = 2)
     private BigDecimal mrp;
 
+    /** HSN (goods) / SAC (services) code. Drives the applicable GST rate and is
+     *  printed on the tax invoice, where Indian GST law requires it per line item. */
+    @Column(name = "hsn_code", length = 12)
+    private String hsnCode;
+
     @Builder.Default
     @Column(name = "gst_rate", precision = 5, scale = 2)
     private BigDecimal gstRate = new BigDecimal("18.00");

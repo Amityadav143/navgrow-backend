@@ -29,6 +29,7 @@ public class ProductController {
     private final SlugUtil slugUtil;
     private final com.navgrow.repository.CatalogItemRepository catalogRepo;
     private final com.navgrow.service.AuditService audit;
+    private final com.navgrow.repository.CategoryTaxRuleRepository taxRuleRepo;
 
     /** Columns the public list endpoint is allowed to sort by (prevents 500s from bad input). */
     private static final Set<String> SORTABLE = Set.of(
@@ -42,6 +43,7 @@ public class ProductController {
         @NotNull @Positive BigDecimal price;
         BigDecimal mrp;
         BigDecimal gstRate;
+        String hsnCode;
         Integer stockQty;
         String badge;
         String imageUrl;
@@ -211,7 +213,27 @@ public class ProductController {
         p.setDescription(req.getDescription());
         p.setPrice(req.getPrice());
         p.setMrp(req.getMrp());
-        p.setGstRate(req.getGstRate() != null ? req.getGstRate() : new BigDecimal("18"));
+        // Tax: an explicit product value always wins. When the request leaves HSN or
+        // the rate blank we fall back to the admin-managed rule for the category,
+        // and only then to the statutory default, so a bulk import or a quick
+        // "add product" never silently lands on the wrong slab.
+        var taxRule = (req.getCategory() != null && !req.getCategory().isBlank())
+                ? taxRuleRepo.findByCategoryIgnoreCase(req.getCategory().trim()).orElse(null)
+                : null;
+
+        if (req.getHsnCode() != null && !req.getHsnCode().isBlank()) {
+            p.setHsnCode(req.getHsnCode().trim());
+        } else if (taxRule != null && taxRule.getHsnCode() != null) {
+            p.setHsnCode(taxRule.getHsnCode());
+        }
+
+        if (req.getGstRate() != null) {
+            p.setGstRate(req.getGstRate());
+        } else if (taxRule != null && taxRule.getGstRate() != null) {
+            p.setGstRate(taxRule.getGstRate());
+        } else {
+            p.setGstRate(new BigDecimal("18"));
+        }
         if (req.getStockQty() != null) p.setStockQty(req.getStockQty());
         p.setBadge(req.getBadge());
         p.setImageUrl(req.getImageUrl());

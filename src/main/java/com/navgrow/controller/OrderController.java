@@ -41,6 +41,7 @@ public class OrderController {
     private final EmailService emailService;
     private final com.navgrow.service.SmsService smsService;
     private final com.navgrow.service.InvoiceService invoiceService;
+    private final com.navgrow.service.DeliveryService deliveryService;
 
     @Value("${razorpay.key-secret}")
     private String razorpaySecret;
@@ -69,6 +70,10 @@ public class OrderController {
         @NotBlank String city;
         @NotBlank String state;
         @NotBlank String pincode;
+        /** 'standard' or 'express' — priced against the buyer's delivery zone. */
+        String deliverySpeed;
+        /** "ONLINE" (Razorpay) or "COD". Defaults to ONLINE. */
+        String paymentMethod;
         String notes;
         @NotEmpty List<OrderItemReq> items;
     }
@@ -117,6 +122,7 @@ public class OrderController {
                 .productName(product.getName())
                 .product(product)
                 .unitPrice(product.getPrice())
+                .hsnCode(product.getHsnCode())
                 .gstRate(rate)
                 .quantity(itemReq.getQuantity())
                 .subtotal(lineTotal)
@@ -125,12 +131,34 @@ public class OrderController {
 
         subtotal  = subtotal.setScale(2, RoundingMode.HALF_UP);
         gstAmount = gstAmount.setScale(2, RoundingMode.HALF_UP);
-        // Shipping: free for orders of ₹5,000+ (by item subtotal), otherwise a flat ₹150.
-        // This mirrors the cart/checkout display so the amount charged matches what the buyer saw.
-        BigDecimal shipping = subtotal.compareTo(new BigDecimal("5000")) >= 0
-            ? BigDecimal.ZERO : new BigDecimal("150");
+        // Delivery is priced against the buyer's zone — the same calculation the
+        // checkout showed them. A flat national rule here would charge a figure
+        // the customer was never quoted (free in Siliguri, ₹200 to the North East).
+        var deliveryQuote = deliveryService.quote(req.getPincode(), subtotal);
+        if (!deliveryQuote.isServiceable()) {
+            throw new BadRequestException(deliveryQuote.getNote() != null
+                ? deliveryQuote.getNote()
+                : "We do not deliver to pincode " + req.getPincode() + " yet.");
+        }
+        boolean express = "express".equalsIgnoreCase(req.getDeliverySpeed())
+                          && deliveryQuote.isExpressAvailable();
+        BigDecimal shipping = express
+            ? (deliveryQuote.getExpressCharge()  != null ? deliveryQuote.getExpressCharge()  : BigDecimal.ZERO)
+            : (deliveryQuote.getStandardCharge() != null ? deliveryQuote.getStandardCharge() : BigDecimal.ZERO);
         shipping = shipping.setScale(2, RoundingMode.HALF_UP);
-        BigDecimal grandTotal = subtotal.add(gstAmount).add(shipping).setScale(2, RoundingMode.HALF_UP);
+
+        // Cash on delivery is only offered where the zone allows it — the same
+        // rule the storefront showed the buyer. Asking for COD into a zone that
+        // does not support it is rejected rather than silently downgraded.
+        boolean cod = "COD".equalsIgnoreCase(req.getPaymentMethod());
+        if (cod && !deliveryQuote.isCodAvailable()) {
+            throw new BadRequestException(
+                "Cash on delivery is not available for pincode " + req.getPincode() + ". Please pay online.");
+        }
+        BigDecimal codCharge = cod && deliveryQuote.getCodCharge() != null
+            ? deliveryQuote.getCodCharge().setScale(2, RoundingMode.HALF_UP)
+            : BigDecimal.ZERO;
+        BigDecimal grandTotal = subtotal.add(gstAmount).add(shipping).add(codCharge).setScale(2, RoundingMode.HALF_UP);
 
         // Create DB order
         Order order = Order.builder()
@@ -140,15 +168,52 @@ public class OrderController {
             .gstin(req.getGstin())
             .addressLine1(req.getAddressLine1()).addressLine2(req.getAddressLine2())
             .city(req.getCity()).state(req.getState()).pincode(req.getPincode())
+            .deliveryZone(deliveryQuote.getZone())
+            .deliverySpeed(express ? "express" : "standard")
+            .deliveryEtaMin(express ? deliveryQuote.getExpressEtaDays() : deliveryQuote.getEtaMinDays())
+            .deliveryEtaMax(express ? deliveryQuote.getExpressEtaDays() : deliveryQuote.getEtaMaxDays())
             .subtotal(subtotal).gstAmount(gstAmount)
             .shippingCharge(shipping).discountAmount(BigDecimal.ZERO)
+            .codCharge(codCharge).paymentMethod(cod ? "COD" : "ONLINE")
             .grandTotal(grandTotal)
-            .status(OrderStatus.PENDING).paymentStatus(PaymentStatus.PENDING)
+            .status(cod ? OrderStatus.CONFIRMED : OrderStatus.PENDING)
+            .paymentStatus(PaymentStatus.PENDING)
             .notes(req.getNotes())
             .build();
         order.setItems(items);
         items.forEach(i -> i.setOrder(order));
         orderRepo.save(order);
+
+        // A COD order is complete at this point — there is nothing to collect
+        // online. Stock is committed now because the order is already confirmed,
+        // unlike a prepaid order which holds no inventory until payment clears.
+        if (cod) {
+            for (OrderItem item : order.getItems()) {
+                Product product = item.getProduct();
+                if (product != null && product.getStockQty() != null) {
+                    product.setStockQty(Math.max(0, product.getStockQty() - item.getQuantity()));
+                    productRepo.save(product);
+                }
+            }
+            emailService.sendOrderConfirmation(
+                order.getCustomerEmail(), order.getCustomerName(),
+                order.getOrderNumber(), order.getGrandTotal().toPlainString());
+            try {
+                smsService.send(order.getCustomerPhone(),
+                    "Your Navgrow order " + order.getOrderNumber() + " is confirmed (Cash on Delivery). Amount payable Rs "
+                    + order.getGrandTotal().toPlainString());
+            } catch (Exception e) {
+                log.warn("COD confirmation SMS failed for {}: {}", order.getOrderNumber(), e.getMessage());
+            }
+            log.info("COD order placed: {} for {}", order.getOrderNumber(), order.getGrandTotal());
+            return ResponseEntity.status(201).body(Map.of(
+                "orderId",       order.getId(),
+                "orderNumber",   order.getOrderNumber(),
+                "paymentMethod", "COD",
+                "codCharge",     codCharge,
+                "grandTotal",    grandTotal
+            ));
+        }
 
         // Create Razorpay order
         try {

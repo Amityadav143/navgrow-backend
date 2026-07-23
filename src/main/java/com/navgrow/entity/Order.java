@@ -75,6 +75,22 @@ public class Order {
     @Builder.Default
     private List<OrderItem> items = new ArrayList<>();
 
+    /** ONLINE = prepaid via Razorpay, COD = collected on delivery. */
+    @Builder.Default
+    @Column(name = "payment_method", nullable = false, length = 20)
+    private String paymentMethod = "ONLINE";
+
+    @Builder.Default
+    @Column(name = "cod_charge", nullable = false, precision = 10, scale = 2)
+    private BigDecimal codCharge = BigDecimal.ZERO;
+
+    /** Delivery promise captured at checkout, so a dispatched order keeps the
+     *  zone, speed and ETA it was actually sold on even if rates change later. */
+    @Column(name = "delivery_zone",  length = 120) private String  deliveryZone;
+    @Column(name = "delivery_speed", length = 20)  private String  deliverySpeed;
+    @Column(name = "delivery_eta_min")             private Integer deliveryEtaMin;
+    @Column(name = "delivery_eta_max")             private Integer deliveryEtaMax;
+
     @Builder.Default
     @Column(name = "created_at", updatable = false) private LocalDateTime createdAt = LocalDateTime.now();
     @Builder.Default
