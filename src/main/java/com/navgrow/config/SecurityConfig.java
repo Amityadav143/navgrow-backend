@@ -37,7 +37,7 @@ public class SecurityConfig {
 
     private static final String[] PUBLIC_GET = {
         "/products/**", "/projects/**", "/news/**", "/gallery/**",
-        "/tenders/**", "/jobs/**", "/coupons/validate",
+        "/tenders/**", "/jobs/**", "/coupons/validate", "/coupons/offers",
         "/uploads/**", "/catalog/**",
         "/actuator/health", "/actuator/info",
         "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**", "/v3/api-docs.yaml",

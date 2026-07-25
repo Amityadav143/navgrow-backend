@@ -70,6 +70,33 @@ public class CouponController {
         ));
     }
 
+    /**
+     * Public list of currently-valid offers, with the real terms attached.
+     *
+     * The storefront previously hard-coded promotional copy ("10% off any
+     * order"), which drifted away from what the server actually enforced and
+     * left customers seeing a rejection they had no way to predict. Serving the
+     * terms from the same rows that enforce them keeps the advertised offer and
+     * the applied discount permanently in step. Nothing sensitive is exposed —
+     * only what a shopper needs to decide whether an offer is worth using.
+     */
+    @GetMapping("/offers")
+    public ResponseEntity<List<Map<String, Object>>> offers() {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Coupon c : repo.findAll()) {
+            if (!c.isValid()) continue;   // inactive, expired or globally exhausted
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("code", c.getCode());
+            m.put("description", c.getDescription() != null ? c.getDescription() : "");
+            m.put("type", c.getCouponType());
+            m.put("value", c.getValue());
+            m.put("minOrderAmount", c.getMinOrderAmount());
+            m.put("maxDiscount", c.getMaxDiscount());
+            out.add(m);
+        }
+        return ResponseEntity.ok(out);
+    }
+
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<Coupon>> list() { return ResponseEntity.ok(repo.findAll()); }
