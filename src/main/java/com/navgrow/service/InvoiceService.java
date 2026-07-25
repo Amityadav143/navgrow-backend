@@ -48,9 +48,16 @@ public class InvoiceService {
 
         for (OrderItem it : o.getItems()) {
             BigDecimal qty   = BigDecimal.valueOf(it.getQuantity());
-            BigDecimal taxable = it.getUnitPrice().multiply(qty);
             BigDecimal gstRate = it.getGstRate() != null ? it.getGstRate() : BigDecimal.valueOf(18);
-            BigDecimal taxAmt  = taxable.multiply(gstRate).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+            // unitPrice is the GST-INCLUSIVE catalogue price, so the taxable value
+            // is backed out of it rather than multiplied up. Treating it as a net
+            // figure here would overstate both the taxable value and the tax, and
+            // the invoice would no longer tally with what the customer paid.
+            BigDecimal lineInclusive = it.getUnitPrice().multiply(qty).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal taxable = lineInclusive
+                .multiply(BigDecimal.valueOf(100))
+                .divide(BigDecimal.valueOf(100).add(gstRate), 2, RoundingMode.HALF_UP);
+            BigDecimal taxAmt  = lineInclusive.subtract(taxable).setScale(2, RoundingMode.HALF_UP);
             totalTaxable = totalTaxable.add(taxable);
             totalTax     = totalTax.add(taxAmt);
 

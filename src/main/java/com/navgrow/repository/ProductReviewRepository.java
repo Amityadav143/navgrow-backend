@@ -19,4 +19,7 @@ public interface ProductReviewRepository extends JpaRepository<ProductReview, UU
 
     @Query("SELECT AVG(r.rating) FROM ProductReview r WHERE r.product.id = :productId AND r.approved = true")
     Double avgRatingForProduct(@Param("productId") UUID productId);
+
+    /** Number of visible (approved) reviews — keeps Product.reviewCount honest. */
+    long countByProductIdAndApprovedTrue(UUID productId);
 }

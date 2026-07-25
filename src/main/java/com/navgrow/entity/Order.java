@@ -50,6 +50,9 @@ public class Order {
     @Builder.Default @Column(name = "gst_amount",      precision = 12, scale = 2) private BigDecimal gstAmount    = BigDecimal.ZERO;
     @Builder.Default @Column(name = "shipping_charge", precision = 12, scale = 2) private BigDecimal shippingCharge = BigDecimal.ZERO;
     @Builder.Default @Column(name = "discount_amount", precision = 12, scale = 2) private BigDecimal discountAmount = BigDecimal.ZERO;
+    /** Coupon applied to this order, if any — recorded so the invoice and the
+     *  per-customer redemption ledger stay in sync with what was charged. */
+    @Column(name = "coupon_code", length = 50) private String couponCode;
     @Column(name = "grand_total",     precision = 12, scale = 2) private BigDecimal grandTotal;
 
     @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.NAMED_ENUM)

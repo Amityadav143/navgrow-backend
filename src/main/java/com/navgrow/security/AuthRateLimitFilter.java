@@ -44,7 +44,8 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
         "/auth/send-otp",        new long[]{ 3, 60_000},   //  3 / minute (SMS cost)
         "/auth/verify-otp",      new long[]{10, 60_000},
         "/auth/forgot-password", new long[]{ 3, 60_000},
-        "/catalogue/leads",      new long[]{ 5, 60_000}    //  5 / minute (spam + email cost)
+        "/catalogue/leads",      new long[]{ 5, 60_000},   //  5 / minute (spam + email cost)
+        "/jobs/resume",          new long[]{ 5, 60_000}    //  5 / minute (anonymous file upload)
     );
     private static final int MAX_TRACKED_KEYS = 10_000;
 

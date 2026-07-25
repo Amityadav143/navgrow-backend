@@ -36,6 +36,8 @@ public class AuthController {
     private final UserRepository userRepo;
     private final PasswordEncoder encoder;
     private final com.navgrow.service.OtpService otpService;
+    private final com.navgrow.service.EmailService emailService;
+    private final com.navgrow.service.SmsService smsService;
 
     // ── DTOs ────────────────────────────────────────────────────────────────
     @Data
@@ -169,6 +171,22 @@ public class AuthController {
             .build();
         userRepo.save(user);
         log.info("New user registered: {}", emailKey);
+
+        // Welcome the new customer. Only email real addresses (phone-only accounts
+        // use a synthetic @phone.navgrow.local address that can't receive mail); a
+        // short welcome SMS goes out when a phone number is on file. Both are
+        // best-effort and never block a successful registration.
+        if (req.getEmail() != null && !req.getEmail().isBlank()) {
+            emailService.sendWelcomeEmail(req.getEmail(), req.getFullName());
+        }
+        if (req.getPhone() != null && !req.getPhone().isBlank()) {
+            try {
+                smsService.send(req.getPhone(),
+                    "Welcome to Navgrow Engineering! Your account is ready. Shop industrial supplies at navgrow.org");
+            } catch (Exception e) {
+                log.warn("Welcome SMS failed for {}: {}", req.getPhone(), e.getMessage());
+            }
+        }
         return ResponseEntity.status(201)
             .body(Map.of("message", "Registration successful. Please log in."));
     }

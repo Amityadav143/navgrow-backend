@@ -16,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.Arrays;
@@ -150,6 +151,47 @@ public class DeliveryService {
                 .codAvailable(Boolean.TRUE.equals(zone.getCodAvailable()))
                 .codCharge(zone.getCodCharge())
                 .build();
+    }
+
+    /**
+     * Volume-based delivery multiplier, keyed on the TOTAL quantity in the order
+     * (not per product line). Delivery is a single order-level charge: the more
+     * units the buyer takes, the smaller the share of the zone's defined charge
+     * they pay. This is what turns "delivery billed per product" into "billed
+     * once for the whole order, discounted by volume":
+     *
+     *      1 unit      → 100% of the zone's delivery charge
+     *      2–5 units   →  80%
+     *      6–10 units  →  70%
+     *      11+ units   →  50%
+     *
+     * (The 2–5 / 5–10 bands share the endpoint 5, which is resolved to the lower
+     *  band — five units pay 80%, ten units pay 70%.)
+     */
+    public static BigDecimal quantityTierFactor(int totalQty) {
+        if (totalQty <= 1)  return BigDecimal.ONE;
+        if (totalQty <= 5)  return new BigDecimal("0.80");
+        if (totalQty <= 10) return new BigDecimal("0.70");
+        return new BigDecimal("0.50");
+    }
+
+    /**
+     * Full quote that also applies the volume-based delivery tier for the given
+     * total quantity. The free-delivery threshold still wins (a free order stays
+     * free), and both standard and express charges are scaled by the same factor
+     * so the figure shown at checkout matches what the server charges.
+     */
+    public DeliveryQuote quote(String pincode, BigDecimal orderValue, int totalQty) {
+        DeliveryQuote q = quote(pincode, orderValue);
+        if (!q.isServiceable()) return q;
+        BigDecimal factor = quantityTierFactor(totalQty);
+        if (q.getStandardCharge() != null) {
+            q.setStandardCharge(q.getStandardCharge().multiply(factor).setScale(2, RoundingMode.HALF_UP));
+        }
+        if (q.getExpressCharge() != null) {
+            q.setExpressCharge(q.getExpressCharge().multiply(factor).setScale(2, RoundingMode.HALF_UP));
+        }
+        return q;
     }
 
     /**

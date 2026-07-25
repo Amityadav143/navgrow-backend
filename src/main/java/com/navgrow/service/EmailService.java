@@ -26,6 +26,10 @@ public class EmailService {
     @Value("${app.frontend-url:http://navgrow.org}")
     private String frontendUrl;
 
+    /** Recruitment inbox. Override with CAREERS_EMAIL if your mailbox differs. */
+    @Value("${app.careers-email:careers@navgrow.org}")
+    private String careersEmail;
+
     @Value("${app.contact-email:info@navgrow.org}")
     private String contactEmail;
 
@@ -127,6 +131,58 @@ public class EmailService {
             log.info("Quote admin notification sent for {}", q.getEmail());
         } catch (Exception e) {
             log.error("Failed to send quote admin notification: {}", e.getMessage());
+        }
+    }
+
+    /** Careers inbox gets the application; the candidate gets an acknowledgement. */
+    @Async
+    public void sendJobApplicationReceived(com.navgrow.entity.JobApplication app) {
+        try {
+            var mime   = mailSender.createMimeMessage();
+            var helper = new MimeMessageHelper(mime, true, "UTF-8");
+            helper.setFrom(fromEmail);
+            helper.setTo(careersEmail);
+            helper.setReplyTo(app.getEmail());
+            helper.setSubject("[Application] " + app.getJobTitle() + " \u2014 " + app.getName());
+            String html = "<div style=\"font-family:Arial,sans-serif;max-width:560px\">"
+                + "<h2 style=\"color:#1e3a8a\">New application: "
+                + org.springframework.web.util.HtmlUtils.htmlEscape(app.getJobTitle()) + "</h2>"
+                + "<table style=\"border-collapse:collapse;width:100%;font-size:14px\">"
+                + row("Name", app.getName()) + row("Email", app.getEmail())
+                + row("Phone", app.getPhone()) + row("Experience", app.getExperience())
+                + row("CV", app.getResumeUrl() == null ? "Not attached" : app.getResumeUrl())
+                + row("Cover note", app.getCoverNote())
+                + "</table>"
+                + "<p style=\"margin-top:16px;font-size:13px;color:#64748b\">"
+                + "Reply directly to this email to reach the candidate.</p></div>";
+            helper.setText(html, true);
+            mailSender.send(mime);
+        } catch (Exception e) {
+            log.error("Careers notification failed: {}", e.getMessage());
+        }
+
+        try {
+            var mime2   = mailSender.createMimeMessage();
+            var helper2 = new MimeMessageHelper(mime2, true, "UTF-8");
+            helper2.setFrom(fromEmail);
+            helper2.setTo(app.getEmail());
+            helper2.setReplyTo(careersEmail);
+            helper2.setSubject("We\u2019ve received your application \u2014 " + app.getJobTitle());
+            String html2 = "<div style=\"font-family:Arial,sans-serif;max-width:560px\">"
+                + "<h2 style=\"color:#1e3a8a\">Thank you, "
+                + org.springframework.web.util.HtmlUtils.htmlEscape(app.getName()) + "</h2>"
+                + "<p style=\"font-size:14px;color:#334155\">We have received your application for <strong>"
+                + org.springframework.web.util.HtmlUtils.htmlEscape(app.getJobTitle())
+                + "</strong> at Navgrow Engineering Service Pvt. Ltd. Our team reviews every "
+                + "application and will get back to you within 5 working days if your profile matches.</p>"
+                + "<p style=\"font-size:13px;color:#64748b\">Questions? Just reply to this email and it "
+                + "will reach our recruitment team.</p>"
+                + "<p style=\"font-size:12px;color:#94a3b8;margin-top:24px\">Navgrow Engineering Service Pvt. Ltd.<br/>"
+                + "Railway \u00b7 Industrial \u00b7 Civil \u00b7 Sustainability</p></div>";
+            helper2.setText(html2, true);
+            mailSender.send(mime2);
+        } catch (Exception e) {
+            log.error("Applicant acknowledgement failed: {}", e.getMessage());
         }
     }
 
@@ -294,6 +350,7 @@ public class EmailService {
     }
 
     // ── RFQ acknowledgement (buyer submitted) ─────────────────────────────────
+    @Async
     public void sendRfqAcknowledgement(String toEmail, String toName, String rfqNumber, int itemCount) {
         try {
             var mime = mailSender.createMimeMessage();
@@ -322,6 +379,7 @@ public class EmailService {
     }
 
     // ── RFQ quote ready (admin priced it) ─────────────────────────────────────
+    @Async
     public void sendRfqQuoted(String toEmail, String toName, String rfqNumber,
                               String total, String validUntil) {
         try {
@@ -399,6 +457,146 @@ public class EmailService {
             mailSender.send(mime);
         } catch (Exception e) {
             log.warn("Failed to send RFQ decision notification: {}", e.getMessage());
+        }
+    }
+
+    // ── Order status update (shipped / delivered / cancelled / processing) ────
+    /**
+     * Tells the customer their order has moved — the transactional email people
+     * most expect from a shop. SHIPPED carries the tracking number and courier so
+     * the buyer can follow the parcel; CANCELLED and DELIVERED get their own copy.
+     * Best-effort: a mail failure never blocks the admin's status change.
+     */
+    @Async
+    public void sendOrderStatusUpdate(com.navgrow.entity.Order order) {
+        try {
+            String status = order.getStatus() == null ? "" : order.getStatus().name();
+            String heading, intro, accent = "#2563eb";
+            switch (status) {
+                case "SHIPPED"   -> { heading = "Your order is on its way";  intro = "Good news — your order has been dispatched."; accent = "#2563eb"; }
+                case "DELIVERED" -> { heading = "Your order has been delivered"; intro = "Your order has been delivered. We hope everything arrived in good order."; accent = "#059669"; }
+                case "CANCELLED" -> { heading = "Your order has been cancelled"; intro = "Your order has been cancelled. Any amount paid online will be refunded to the original payment method."; accent = "#dc2626"; }
+                case "PROCESSING"-> { heading = "Your order is being prepared"; intro = "Your order is now being processed and will be dispatched shortly."; accent = "#2563eb"; }
+                case "REFUNDED"  -> { heading = "Your order has been refunded"; intro = "A refund has been issued for your order to the original payment method."; accent = "#059669"; }
+                default          -> { heading = "Order update"; intro = "There is an update on your order."; }
+            }
+            var mime   = mailSender.createMimeMessage();
+            var helper = new MimeMessageHelper(mime, true, "UTF-8");
+            helper.setFrom(fromEmail);
+            helper.setTo(order.getCustomerEmail());
+            helper.setSubject(heading + " – " + order.getOrderNumber() + " | Navgrow Engineering");
+            StringBuilder html = new StringBuilder()
+                .append("<div style='font-family:Inter,Arial,sans-serif;max-width:560px;margin:auto'>")
+                .append("<h2 style='color:").append(accent).append("'>").append(heading).append("</h2>")
+                .append("<p>Dear ").append(safe(order.getCustomerName())).append(",</p>")
+                .append("<p>").append(intro).append("</p>")
+                .append("<table style='width:100%;border-collapse:collapse;margin:12px 0'>")
+                .append("<tr><td style='padding:6px;color:#64748b'>Order</td><td style='padding:6px;text-align:right;font-weight:600'>")
+                .append(safe(order.getOrderNumber())).append("</td></tr>")
+                .append("<tr><td style='padding:6px;color:#64748b'>Status</td><td style='padding:6px;text-align:right;font-weight:600'>")
+                .append(safe(status)).append("</td></tr>");
+            if ("SHIPPED".equals(status)) {
+                if (order.getCourierName() != null && !order.getCourierName().isBlank())
+                    html.append("<tr><td style='padding:6px;color:#64748b'>Courier</td><td style='padding:6px;text-align:right'>")
+                        .append(safe(order.getCourierName())).append("</td></tr>");
+                if (order.getTrackingNumber() != null && !order.getTrackingNumber().isBlank())
+                    html.append("<tr><td style='padding:6px;color:#64748b'>Tracking No.</td><td style='padding:6px;text-align:right;font-weight:600'>")
+                        .append(safe(order.getTrackingNumber())).append("</td></tr>");
+            }
+            html.append("</table>")
+                .append("<p><a href='").append(frontendUrl).append("/track/").append(safe(order.getOrderNumber()))
+                .append("' style='color:#2563eb'>Track your order</a></p>")
+                .append("<p style='color:#64748b;font-size:13px;margin-top:20px'>Questions? ")
+                .append("<a href='mailto:").append(contactEmail).append("'>").append(contactEmail).append("</a> | +91 89270 70972</p>")
+                .append("<p>Thank you for choosing Navgrow Engineering.</p></div>");
+            helper.setText(html.toString(), true);
+            mailSender.send(mime);
+            log.info("Order status ({}) email sent: {}", status, order.getOrderNumber());
+        } catch (Exception e) {
+            log.warn("Failed to send order status update for {}: {}",
+                order.getOrderNumber(), e.getMessage());
+        }
+    }
+
+    // ── New order → office/admin notification ─────────────────────────────────
+    /**
+     * Alerts the office inbox the moment an order is confirmed (COD at placement,
+     * online at successful payment), so fulfilment doesn't depend on someone
+     * happening to open the admin dashboard. Reply-To is the customer.
+     */
+    @Async
+    public void sendNewOrderAdminNotification(com.navgrow.entity.Order order) {
+        try {
+            var mime   = mailSender.createMimeMessage();
+            var helper = new MimeMessageHelper(mime, true, "UTF-8");
+            helper.setFrom(fromEmail);
+            helper.setTo(contactEmail);
+            if (order.getCustomerEmail() != null && !order.getCustomerEmail().isBlank())
+                helper.setReplyTo(order.getCustomerEmail());
+            helper.setSubject("New order " + order.getOrderNumber() + " — ₹"
+                + (order.getGrandTotal() == null ? "" : order.getGrandTotal().toPlainString())
+                + " (" + safe(order.getPaymentMethod()) + ")");
+            StringBuilder html = new StringBuilder()
+                .append("<div style='font-family:Inter,Arial,sans-serif;max-width:600px;margin:auto'>")
+                .append("<h2 style='color:#2563eb'>New order received</h2>")
+                .append("<table style='width:100%;border-collapse:collapse;margin:12px 0'>")
+                .append(row("Order", order.getOrderNumber()))
+                .append(row("Customer", order.getCustomerName()))
+                .append(row("Email", order.getCustomerEmail()))
+                .append(row("Phone", order.getCustomerPhone()))
+                .append(row("Payment", order.getPaymentMethod()))
+                .append(row("Delivery", order.getDeliverySpeed()))
+                .append(row("Total", order.getGrandTotal() == null ? "" : "₹" + order.getGrandTotal().toPlainString()));
+            if (order.getCouponCode() != null && !order.getCouponCode().isBlank())
+                html.append(row("Coupon", order.getCouponCode()));
+            html.append("</table>");
+            if (order.getItems() != null && !order.getItems().isEmpty()) {
+                html.append("<h3 style='margin:16px 0 6px'>Items</h3>")
+                    .append("<table style='width:100%;border-collapse:collapse'>");
+                for (var it : order.getItems()) {
+                    html.append("<tr><td style='padding:5px;border-bottom:1px solid #eee'>")
+                        .append(safe(it.getProductName())).append("</td>")
+                        .append("<td style='padding:5px;border-bottom:1px solid #eee;text-align:right'>× ")
+                        .append(it.getQuantity()).append("</td></tr>");
+                }
+                html.append("</table>");
+            }
+            html.append("<p style='margin-top:16px'><a href='").append(frontendUrl)
+                .append("/admin/orders' style='color:#2563eb'>Open in admin dashboard</a></p>")
+                .append("<p style='color:#64748b;font-size:13px'>Navgrow Engineering — admin notification</p></div>");
+            helper.setText(html.toString(), true);
+            mailSender.send(mime);
+            log.info("New-order admin notification sent: {}", order.getOrderNumber());
+        } catch (Exception e) {
+            log.warn("Failed to send new-order admin notification for {}: {}",
+                order.getOrderNumber(), e.getMessage());
+        }
+    }
+
+    // ── Welcome email (new account) ───────────────────────────────────────────
+    /** A short welcome after registration. Skipped for phone-only synthetic emails by the caller. */
+    @Async
+    public void sendWelcomeEmail(String toEmail, String toName) {
+        try {
+            var mime   = mailSender.createMimeMessage();
+            var helper = new MimeMessageHelper(mime, true, "UTF-8");
+            helper.setFrom(fromEmail);
+            helper.setTo(toEmail);
+            helper.setSubject("Welcome to " + appName);
+            String html = "<div style='font-family:Inter,Arial,sans-serif;max-width:560px;margin:auto'>"
+                + "<h2 style='color:#2563eb'>Welcome to Navgrow Engineering</h2>"
+                + "<p>Dear " + safe(toName) + ",</p>"
+                + "<p>Thank you for creating an account. You can now track orders, request quotes (RFQ) "
+                + "for bulk requirements, and download GST invoices from your dashboard.</p>"
+                + "<p><a href='" + frontendUrl + "/shop' style='background:#2563eb;color:#fff;padding:10px 18px;"
+                + "border-radius:8px;text-decoration:none;display:inline-block'>Browse the shop</a></p>"
+                + "<p style='color:#64748b;font-size:13px;margin-top:20px'>Need help? "
+                + "<a href='mailto:" + contactEmail + "'>" + contactEmail + "</a> | +91 89270 70972</p></div>";
+            helper.setText(html, true);
+            mailSender.send(mime);
+            log.info("Welcome email sent to {}", toEmail);
+        } catch (Exception e) {
+            log.warn("Failed to send welcome email to {}: {}", toEmail, e.getMessage());
         }
     }
 

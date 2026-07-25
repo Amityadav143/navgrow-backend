@@ -19,11 +19,16 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import java.util.*;
 
+@lombok.extern.slf4j.Slf4j
 @RestController @RequestMapping("/jobs") @RequiredArgsConstructor
 public class JobController {
     private final JobListingRepository jobRepo;
     private final JobApplicationRepository appRepo;
     private final com.navgrow.service.AuditService audit;
+    private final com.navgrow.service.EmailService emailService;
+
+    @org.springframework.beans.factory.annotation.Value("${app.upload-dir:uploads}")
+    private String uploadDir;
 
     @Data public static class JobReq {
         @NotBlank String title, department, location;
@@ -49,6 +54,9 @@ public class JobController {
         @Email @NotBlank String email;
         @NotBlank String phone;
         String experience, coverNote;
+        /** URL returned by /jobs/resume — the entity has always had the column,
+         *  but the request never carried it, so no CV could reach an application. */
+        String resumeUrl;
     }
 
     @GetMapping public ResponseEntity<List<JobListing>> listOpen() { return ResponseEntity.ok(jobRepo.findByStatusOrderByCreatedAtDesc(JobStatus.OPEN)); }
@@ -123,11 +131,60 @@ public class JobController {
         JobApplication app = JobApplication.builder()
             .job(job).jobTitle(job.getTitle())
             .name(req.getName()).email(req.getEmail()).phone(req.getPhone())
-            .experience(req.getExperience()).coverNote(req.getCoverNote()).build();
+            .experience(req.getExperience()).coverNote(req.getCoverNote())
+            .resumeUrl(req.getResumeUrl()).build();
         appRepo.save(app);
         audit.log("JOB_APPLICATION", "JobApplication", app.getId() != null ? app.getId().toString() : null,
                   req.getName() + " -> " + job.getTitle());
+        // Best-effort notification: a failed mail must not lose the application.
+        try {
+            emailService.sendJobApplicationReceived(app);
+        } catch (Exception e) {
+            log.warn("Job application email failed for {}: {}", req.getEmail(), e.getMessage());
+        }
         return ResponseEntity.status(201).body(Map.of("message","Application submitted. We'll reach out within 5 business days."));
+    }
+
+    /**
+     * Accepts a CV from an applicant and returns a URL to attach to the
+     * application. Deliberately separate from the admin uploader: candidates are
+     * anonymous, so this is limited to document types and a small size cap.
+     */
+    @PostMapping("/resume")
+    public ResponseEntity<Map<String,Object>> uploadResume(
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file) throws java.io.IOException {
+        if (file == null || file.isEmpty())
+            throw new com.navgrow.exception.BadRequestException("Please choose a file to upload.");
+        if (file.getSize() > 5L * 1024 * 1024)
+            throw new com.navgrow.exception.BadRequestException("Your CV must be under 5 MB.");
+
+        String original = file.getOriginalFilename() == null ? "resume" : file.getOriginalFilename();
+        String ext = original.contains(".")
+            ? original.substring(original.lastIndexOf('.') + 1).toLowerCase() : "";
+        if (!java.util.Set.of("pdf", "doc", "docx").contains(ext))
+            throw new com.navgrow.exception.BadRequestException("Please upload your CV as a PDF or Word document.");
+
+        // Read once, then verify the bytes actually match the extension.
+        byte[] bytes = file.getBytes();
+        if (bytes.length < 4) throw new com.navgrow.exception.BadRequestException("That file appears to be empty.");
+        String magic = new String(java.util.Arrays.copyOfRange(bytes, 0, 4), java.nio.charset.StandardCharsets.ISO_8859_1);
+        boolean looksPdf  = magic.startsWith("%PDF");
+        boolean looksZip  = bytes[0] == 0x50 && bytes[1] == 0x4B;              // docx
+        boolean looksDoc  = (bytes[0] & 0xFF) == 0xD0 && (bytes[1] & 0xFF) == 0xCF; // legacy .doc
+        if (!(looksPdf || looksZip || looksDoc))
+            throw new com.navgrow.exception.BadRequestException("That file does not look like a PDF or Word document.");
+
+        java.nio.file.Path dir = java.nio.file.Paths.get(uploadDir, "resumes").toAbsolutePath().normalize();
+        java.nio.file.Files.createDirectories(dir);
+        String stored = java.util.UUID.randomUUID() + "." + ext;
+        java.nio.file.Path target = dir.resolve(stored).normalize();
+        if (!target.startsWith(dir)) throw new com.navgrow.exception.BadRequestException("Invalid file name.");
+        java.nio.file.Files.write(target, bytes, java.nio.file.StandardOpenOption.CREATE_NEW);
+
+        String url = org.springframework.web.servlet.support.ServletUriComponentsBuilder
+            .fromCurrentContextPath().path("/uploads/resumes/").path(stored).toUriString();
+        log.info("Resume uploaded: {} ({} bytes)", original, bytes.length);
+        return ResponseEntity.ok(Map.of("url", url, "fileName", stored, "originalName", original, "size", bytes.length));
     }
 
     @GetMapping("/{jobId}/applications") @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")

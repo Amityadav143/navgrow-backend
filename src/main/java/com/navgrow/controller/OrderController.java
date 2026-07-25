@@ -42,6 +42,9 @@ public class OrderController {
     private final com.navgrow.service.SmsService smsService;
     private final com.navgrow.service.InvoiceService invoiceService;
     private final com.navgrow.service.DeliveryService deliveryService;
+    private final com.navgrow.repository.UserRepository userRepo;
+    private final com.navgrow.repository.CouponRepository couponRepo;
+    private final com.navgrow.repository.CouponRedemptionRepository couponRedemptionRepo;
 
     @Value("${razorpay.key-secret}")
     private String razorpaySecret;
@@ -74,6 +77,8 @@ public class OrderController {
         String deliverySpeed;
         /** "ONLINE" (Razorpay) or "COD". Defaults to ONLINE. */
         String paymentMethod;
+        /** Optional discount code (e.g. NAVGROW10) — re-validated server-side. */
+        String couponCode;
         String notes;
         @NotEmpty List<OrderItemReq> items;
     }
@@ -88,7 +93,8 @@ public class OrderController {
     // ── Create Razorpay order ───────────────────────────────────────────────
     @PostMapping
     @org.springframework.transaction.annotation.Transactional
-    public ResponseEntity<Map<String, Object>> createOrder(@Valid @RequestBody CreateOrderRequest req) {
+    public ResponseEntity<Map<String, Object>> createOrder(
+            @AuthenticationPrincipal UserDetails principal,@Valid @RequestBody CreateOrderRequest req) {
         // Validate and build order items
         List<OrderItem> items = new ArrayList<>();
         BigDecimal subtotal = BigDecimal.ZERO;
@@ -107,16 +113,26 @@ public class OrderController {
                     + " unit(s) of " + product.getName() + " are in stock");
             }
 
-            BigDecimal lineTotal = product.getPrice()
+            // Catalogue prices are GST-INCLUSIVE. The tax is therefore extracted
+            // from the price rather than added on top:
+            //     taxable = inclusive x 100 / (100 + rate)
+            //     gst     = inclusive - taxable
+            // Adding it on top would charge the customer more than the price shown.
+            BigDecimal lineInclusive = product.getPrice()
                 .multiply(BigDecimal.valueOf(itemReq.getQuantity()))
                 .setScale(2, RoundingMode.HALF_UP);
-            // Each product can have its own GST slab (5/12/18/28%), so tax is summed per line.
+            // Each product can have its own GST slab (5/12/18/28%), so tax is worked out per line.
             BigDecimal rate = product.getGstRate() != null ? product.getGstRate() : new BigDecimal("18");
-            BigDecimal lineGst = lineTotal.multiply(rate)
-                .divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
+            BigDecimal lineTaxable = lineInclusive
+                .multiply(new BigDecimal("100"))
+                .divide(new BigDecimal("100").add(rate), 2, RoundingMode.HALF_UP);
+            BigDecimal lineGst = lineInclusive.subtract(lineTaxable).setScale(2, RoundingMode.HALF_UP);
 
-            subtotal = subtotal.add(lineTotal);
+            // subtotal carries the taxable value so the invoice reconciles:
+            // taxable + gst == the inclusive price the customer was shown.
+            subtotal = subtotal.add(lineTaxable);
             gstAmount = gstAmount.add(lineGst);
+            BigDecimal lineTotal = lineInclusive;
 
             items.add(OrderItem.builder()
                 .productName(product.getName())
@@ -125,7 +141,7 @@ public class OrderController {
                 .hsnCode(product.getHsnCode())
                 .gstRate(rate)
                 .quantity(itemReq.getQuantity())
-                .subtotal(lineTotal)
+                .subtotal(lineTaxable)
                 .build());
         }
 
@@ -134,7 +150,12 @@ public class OrderController {
         // Delivery is priced against the buyer's zone — the same calculation the
         // checkout showed them. A flat national rule here would charge a figure
         // the customer was never quoted (free in Siliguri, ₹200 to the North East).
-        var deliveryQuote = deliveryService.quote(req.getPincode(), subtotal);
+        // It is billed ONCE for the whole order and discounted by the total
+        // quantity (DeliveryService.quantityTierFactor), never per product line.
+        int totalQty = req.getItems().stream()
+            .mapToInt(i -> i.getQuantity() == null ? 0 : i.getQuantity())
+            .sum();
+        var deliveryQuote = deliveryService.quote(req.getPincode(), subtotal, totalQty);
         if (!deliveryQuote.isServiceable()) {
             throw new BadRequestException(deliveryQuote.getNote() != null
                 ? deliveryQuote.getNote()
@@ -158,11 +179,48 @@ public class OrderController {
         BigDecimal codCharge = cod && deliveryQuote.getCodCharge() != null
             ? deliveryQuote.getCodCharge().setScale(2, RoundingMode.HALF_UP)
             : BigDecimal.ZERO;
-        BigDecimal grandTotal = subtotal.add(gstAmount).add(shipping).add(codCharge).setScale(2, RoundingMode.HALF_UP);
 
-        // Create DB order
+        // Orders belong to an account: the endpoint is authenticated, so the
+        // buyer can find this order under "My orders" rather than only by number.
+        // Resolved before the coupon because "once per customer" is keyed on the
+        // account, not the email typed into the form.
+        User buyer = principal != null
+            ? userRepo.findByEmail(principal.getUsername()).orElse(null) : null;
+
+        // ── Coupon ──────────────────────────────────────────────────────────
+        // Re-validated on the server against the price the customer actually pays
+        // (goods INCLUSIVE of GST) — the client-sent figure is never trusted. The
+        // discount is applied as a single deduction and shown as its own line on
+        // the invoice, so per-line taxable values still reconcile.
+        BigDecimal goodsInclusive = subtotal.add(gstAmount);
+        BigDecimal discount = BigDecimal.ZERO;
+        Coupon appliedCoupon = null;
+        String couponCode = req.getCouponCode() != null ? req.getCouponCode().trim() : null;
+        if (couponCode != null && !couponCode.isEmpty()) {
+            Coupon coupon = couponRepo.findByCodeIgnoreCase(couponCode)
+                .orElseThrow(() -> new BadRequestException("Invalid coupon code."));
+            if (!coupon.isValid())
+                throw new BadRequestException("Coupon " + coupon.getCode() + " is expired or no longer valid.");
+            if (goodsInclusive.compareTo(coupon.getMinOrderAmount()) < 0)
+                throw new BadRequestException("Coupon " + coupon.getCode()
+                    + " applies only to orders of ₹" + coupon.getMinOrderAmount().toBigInteger() + " or more.");
+            if (buyer == null)
+                throw new BadRequestException("Please sign in to use a coupon.");
+            if (couponRedemptionRepo.existsByCouponIdAndUserId(coupon.getId(), buyer.getId()))
+                throw new BadRequestException("You have already used " + coupon.getCode() + ". This code is limited to one order per customer.");
+            discount = coupon.calculateDiscount(goodsInclusive);
+            appliedCoupon = coupon;
+            couponCode = coupon.getCode();
+        } else {
+            couponCode = null;
+        }
+
+        BigDecimal grandTotal = goodsInclusive.subtract(discount)
+            .add(shipping).add(codCharge).setScale(2, RoundingMode.HALF_UP);
+
         Order order = Order.builder()
             .orderNumber(orderNumGen.generate())
+            .user(buyer)
             .customerName(req.getCustomerName()).customerEmail(req.getCustomerEmail())
             .customerPhone(req.getCustomerPhone()).companyName(req.getCompanyName())
             .gstin(req.getGstin())
@@ -173,7 +231,8 @@ public class OrderController {
             .deliveryEtaMin(express ? deliveryQuote.getExpressEtaDays() : deliveryQuote.getEtaMinDays())
             .deliveryEtaMax(express ? deliveryQuote.getExpressEtaDays() : deliveryQuote.getEtaMaxDays())
             .subtotal(subtotal).gstAmount(gstAmount)
-            .shippingCharge(shipping).discountAmount(BigDecimal.ZERO)
+            .shippingCharge(shipping).discountAmount(discount)
+            .couponCode(couponCode)
             .codCharge(codCharge).paymentMethod(cod ? "COD" : "ONLINE")
             .grandTotal(grandTotal)
             .status(cod ? OrderStatus.CONFIRMED : OrderStatus.PENDING)
@@ -188,6 +247,8 @@ public class OrderController {
         // online. Stock is committed now because the order is already confirmed,
         // unlike a prepaid order which holds no inventory until payment clears.
         if (cod) {
+            // COD orders are confirmed immediately, so the coupon is spent now.
+            recordCouponRedemption(appliedCoupon, buyer, order);
             for (OrderItem item : order.getItems()) {
                 Product product = item.getProduct();
                 if (product != null && product.getStockQty() != null) {
@@ -198,6 +259,8 @@ public class OrderController {
             emailService.sendOrderConfirmation(
                 order.getCustomerEmail(), order.getCustomerName(),
                 order.getOrderNumber(), order.getGrandTotal().toPlainString());
+            // Alert the office inbox so fulfilment can start immediately.
+            emailService.sendNewOrderAdminNotification(order);
             try {
                 smsService.send(order.getCustomerPhone(),
                     "Your Navgrow order " + order.getOrderNumber() + " is confirmed (Cash on Delivery). Amount payable Rs "
@@ -256,6 +319,18 @@ public class OrderController {
         Order order = orderRepo.findByRazorpayOrderId(req.getRazorpayOrderId())
             .orElseThrow(() -> new ResourceNotFoundException("Order not found for Razorpay order: " + req.getRazorpayOrderId()));
 
+        // Idempotency: Razorpay can retry the callback and users can double-submit.
+        // A replay would pass the signature check again, so without this guard the
+        // stock would be decremented twice and the customer would get duplicate
+        // confirmations. If the payment is already recorded, just acknowledge it.
+        if (order.getPaymentStatus() == PaymentStatus.PAID) {
+            return ResponseEntity.ok(Map.of(
+                "success", true,
+                "orderNumber", order.getOrderNumber(),
+                "message", "Payment already verified. Order confirmed!"
+            ));
+        }
+
         // Verify HMAC signature
         try {
             String payload = req.getRazorpayOrderId() + "|" + req.getRazorpayPaymentId();
@@ -278,6 +353,13 @@ public class OrderController {
             order.setStatus(OrderStatus.CONFIRMED);
             orderRepo.save(order);
 
+            // Spend the coupon only now that payment has actually cleared, so an
+            // abandoned/unpaid online order never burns the customer's one use.
+            if (order.getCouponCode() != null && order.getUser() != null) {
+                couponRepo.findByCodeIgnoreCase(order.getCouponCode())
+                    .ifPresent(c -> recordCouponRedemption(c, order.getUser(), order));
+            }
+
             // Decrement stock for each purchased item now that payment has succeeded.
             // Done after payment (not at order creation) so abandoned/unpaid orders
             // don't hold inventory. Stock never goes below zero.
@@ -294,6 +376,9 @@ public class OrderController {
             emailService.sendOrderConfirmation(
                 order.getCustomerEmail(), order.getCustomerName(),
                 order.getOrderNumber(), order.getGrandTotal().toPlainString());
+
+            // Alert the office inbox so fulfilment can start immediately.
+            emailService.sendNewOrderAdminNotification(order);
 
             // Send confirmation SMS (best-effort; never blocks the response)
             try {
@@ -400,15 +485,91 @@ public class OrderController {
 
     @PatchMapping("/{id}/status")
     @PreAuthorize("hasRole('ADMIN')")
+    @org.springframework.transaction.annotation.Transactional
     public ResponseEntity<Order> updateStatus(
             @PathVariable UUID id, @RequestParam OrderStatus status,
             @RequestParam(required = false) String trackingNumber,
             @RequestParam(required = false) String courierName) {
         Order order = orderRepo.findById(id)
             .orElseThrow(() -> new ResourceNotFoundException("Order", id.toString()));
+
+        OrderStatus previous = order.getStatus();
+        boolean statusChanged = previous != status;
+
+        // Stock was committed for this order if payment cleared (online) or it is a
+        // confirmed COD order (COD commits stock at placement). If such an order is
+        // now being CANCELLED, put the reserved units back so inventory isn't lost.
+        boolean stockWasCommitted =
+            order.getPaymentStatus() == PaymentStatus.PAID
+            || ("COD".equalsIgnoreCase(order.getPaymentMethod())
+                && previous != OrderStatus.PENDING && previous != OrderStatus.CANCELLED);
+        if (status == OrderStatus.CANCELLED && previous != OrderStatus.CANCELLED && stockWasCommitted) {
+            for (OrderItem item : order.getItems()) {
+                Product product = item.getProduct();
+                if (product != null && product.getStockQty() != null) {
+                    product.setStockQty(product.getStockQty() + item.getQuantity());
+                    productRepo.save(product);
+                }
+            }
+            log.info("Restored stock for cancelled order {}", order.getOrderNumber());
+        }
+
         order.setStatus(status);
         if (trackingNumber != null) order.setTrackingNumber(trackingNumber);
         if (courierName    != null) order.setCourierName(courierName);
-        return ResponseEntity.ok(orderRepo.save(order));
+        Order saved = orderRepo.save(order);
+
+        // Keep the customer informed on every real status change — the shipped /
+        // delivered / cancelled updates people expect. Best-effort: a failed
+        // notification must not fail the admin's update.
+        if (statusChanged) {
+            emailService.sendOrderStatusUpdate(saved);
+            try {
+                smsService.send(saved.getCustomerPhone(), buildStatusSms(saved));
+            } catch (Exception e) {
+                log.warn("Status SMS failed for {}: {}", saved.getOrderNumber(), e.getMessage());
+            }
+        }
+        return ResponseEntity.ok(saved);
+    }
+
+    /** Short SMS body for an order status change. */
+    private String buildStatusSms(Order order) {
+        String num = order.getOrderNumber();
+        return switch (order.getStatus()) {
+            case SHIPPED -> "Your Navgrow order " + num + " has shipped"
+                + (order.getTrackingNumber() != null && !order.getTrackingNumber().isBlank()
+                    ? " (Tracking: " + order.getTrackingNumber() + ")" : "")
+                + ". Track at navgrow.org.";
+            case DELIVERED -> "Your Navgrow order " + num + " has been delivered. Thank you for shopping with us!";
+            case CANCELLED -> "Your Navgrow order " + num + " has been cancelled. Any online payment will be refunded.";
+            case PROCESSING -> "Your Navgrow order " + num + " is being prepared for dispatch.";
+            case REFUNDED -> "A refund has been issued for your Navgrow order " + num + ".";
+            default -> "Update on your Navgrow order " + num + ": " + order.getStatus() + ".";
+        };
+    }
+
+    /**
+     * Writes the (coupon, customer) redemption row and bumps the coupon's usage
+     * counter — but only once per customer. The UNIQUE (coupon_id, user_id)
+     * constraint is the real guard, so catching its violation means a retry or a
+     * concurrent request can never turn a duplicate into a 500.
+     */
+    private void recordCouponRedemption(Coupon coupon, User buyer, Order order) {
+        if (coupon == null || buyer == null) return;
+        if (couponRedemptionRepo.existsByCouponIdAndUserId(coupon.getId(), buyer.getId())) return;
+        try {
+            couponRedemptionRepo.save(CouponRedemption.builder()
+                .couponId(coupon.getId())
+                .userId(buyer.getId())
+                .orderId(order.getId())
+                .couponCode(coupon.getCode())
+                .build());
+            coupon.setUsageCount(coupon.getUsageCount() + 1);
+            couponRepo.save(coupon);
+        } catch (org.springframework.dao.DataIntegrityViolationException dup) {
+            log.info("Coupon {} already redeemed by user {} (race) — ignoring duplicate",
+                coupon.getCode(), buyer.getId());
+        }
     }
 }

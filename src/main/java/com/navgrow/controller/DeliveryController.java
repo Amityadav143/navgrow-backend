@@ -43,12 +43,19 @@ public class DeliveryController {
     private final DeliveryZoneRepository zoneRepo;
     private final AuditService audit;
 
-    /** Public: can we deliver to this pincode, at what cost, and by when. */
+    /**
+     * Public: can we deliver to this pincode, at what cost, and by when.
+     * `qty` is the total number of units in the order; it drives the volume-based
+     * delivery tier so the cart/checkout preview shows the same charge the order
+     * endpoint will apply. Defaults to a single unit when omitted.
+     */
     @GetMapping("/check")
     public ResponseEntity<DeliveryService.DeliveryQuote> check(
             @RequestParam String pincode,
-            @RequestParam(required = false) BigDecimal orderValue) {
-        return ResponseEntity.ok(delivery.quote(pincode, orderValue));
+            @RequestParam(required = false) BigDecimal orderValue,
+            @RequestParam(required = false, defaultValue = "1") Integer qty) {
+        int totalQty = (qty == null || qty < 1) ? 1 : qty;
+        return ResponseEntity.ok(delivery.quote(pincode, orderValue, totalQty));
     }
 
     // ─────────────────────────── Admin ───────────────────────────

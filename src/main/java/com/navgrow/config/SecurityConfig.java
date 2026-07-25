@@ -48,8 +48,8 @@ public class SecurityConfig {
     private static final String[] PUBLIC_POST = {
         "/analytics/track",
         "/auth/**", "/contact", "/newsletter/**",
-        "/quotes", "/orders", "/orders/payment/verify", "/rfqs",
-        "/jobs/*/apply", "/products/*/reviews",
+        "/quotes", "/rfqs",
+        "/jobs/*/apply", "/jobs/resume", "/products/*/reviews",
         "/chat", "/analytics/events", "/catalogue/leads"
     };
 

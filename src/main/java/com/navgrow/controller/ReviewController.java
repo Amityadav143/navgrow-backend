@@ -63,13 +63,8 @@ public class ReviewController {
             .orElseThrow(() -> new ResourceNotFoundException("Review", id.toString()));
         r.setApproved(true);
         reviewRepo.save(r);
-        // Update product average rating
-        Double avg = reviewRepo.avgRatingForProduct(r.getProduct().getId());
-        if (avg != null) {
-            Product p = r.getProduct();
-            p.setRating(BigDecimal.valueOf(avg).setScale(1, RoundingMode.HALF_UP));
-            productRepo.save(p);
-        }
+        // Refresh the product's rating AND visible-review count together.
+        recomputeProductRating(r.getProduct());
         return ResponseEntity.ok(r);
     }
 
@@ -81,5 +76,33 @@ public class ReviewController {
 
     @DeleteMapping("/admin/reviews/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> delete(@PathVariable UUID id) { reviewRepo.deleteById(id); return ResponseEntity.noContent().build(); }
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        // Load first so we know which product to refresh; deleting an approved
+        // review must lower that product's rating/count, not leave them stale.
+        ProductReview r = reviewRepo.findById(id).orElse(null);
+        if (r == null) return ResponseEntity.noContent().build();
+        Product product = r.getProduct();
+        reviewRepo.delete(r);
+        reviewRepo.flush();
+        recomputeProductRating(product);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Recomputes a product's displayed rating and review count from its currently
+     * approved reviews. Called whenever the approved set changes (approve/delete)
+     * so the star average and the "(N reviews)" count never drift apart or go
+     * stale — with no approved reviews the rating resets to 0.
+     */
+    private void recomputeProductRating(Product product) {
+        if (product == null) return;
+        UUID pid = product.getId();
+        Double avg  = reviewRepo.avgRatingForProduct(pid);
+        long   count = reviewRepo.countByProductIdAndApprovedTrue(pid);
+        product.setRating(avg != null
+            ? BigDecimal.valueOf(avg).setScale(1, RoundingMode.HALF_UP)
+            : BigDecimal.ZERO);
+        product.setReviewCount((int) count);
+        productRepo.save(product);
+    }
 }

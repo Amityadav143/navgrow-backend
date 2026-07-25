@@ -130,7 +130,7 @@ Returns: 7 days for manufacturing defects
 20+ ISI/BIS certified products across 5 categories.
 
 DISCOUNT CODES:
-• NAVGROW10  — 10% off any order (max ₹500)
+• NAVGROW10  — 10% off (up to ₹250) on orders ≥ ₹3,000, once per customer
 • FLAT200    — ₹200 off on orders ≥ ₹2,000
 • RAILWAY15  — 15% off for railway department orders (max ₹1,000)
 
@@ -228,7 +228,7 @@ RESPONSE GUIDELINES
 
         CANNED.put("discount|coupon|code|offer|promo",
             "We have **3 active discount codes** for the shop:\n\n" +
-            "🎟 **NAVGROW10** — 10% off any order (max ₹500 discount)\n" +
+            "🎟 **NAVGROW10** — 10% off (up to ₹250) on orders ≥ ₹3,000, once per customer\n" +
             "🎟 **FLAT200** — ₹200 off on orders ≥ ₹2,000 (limited uses)\n" +
             "🎟 **RAILWAY15** — 15% off for railway department orders (max ₹1,000)\n\n" +
             "Apply at checkout. One code per order. 🛒 Shop: navgrow.org/shop");

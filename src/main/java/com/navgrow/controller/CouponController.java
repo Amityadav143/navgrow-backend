@@ -23,6 +23,8 @@ import java.util.*;
 @RestController @RequestMapping("/coupons") @RequiredArgsConstructor
 public class CouponController {
     private final CouponRepository repo;
+    private final com.navgrow.repository.CouponRedemptionRepository redemptionRepo;
+    private final com.navgrow.repository.UserRepository userRepo;
 
     @Data public static class CouponReq {
         @NotBlank String code;
@@ -38,13 +40,26 @@ public class CouponController {
 
     @PostMapping("/validate")
     public ResponseEntity<Map<String, Object>> validate(
+            @org.springframework.security.core.annotation.AuthenticationPrincipal
+                org.springframework.security.core.userdetails.UserDetails principal,
             @RequestParam @NotBlank String code,
             @RequestParam @NotNull BigDecimal amount) {
         Coupon coupon = repo.findByCodeIgnoreCase(code)
             .orElseThrow(() -> new BadRequestException("Invalid coupon code."));
         if (!coupon.isValid()) throw new BadRequestException("Coupon is expired or no longer valid.");
         if (amount.compareTo(coupon.getMinOrderAmount()) < 0)
-            throw new BadRequestException("Minimum order amount for this coupon is ₹" + coupon.getMinOrderAmount());
+            throw new BadRequestException("This coupon applies only to orders of ₹"
+                + coupon.getMinOrderAmount().toBigInteger() + " or more.");
+        // Proactively surface "already used" for a signed-in customer, so a
+        // one-per-customer code is rejected in the cart rather than at payment.
+        // The order endpoint re-checks this — this is only a friendlier heads-up.
+        if (principal != null) {
+            userRepo.findByEmail(principal.getUsername()).ifPresent(u -> {
+                if (redemptionRepo.existsByCouponIdAndUserId(coupon.getId(), u.getId()))
+                    throw new BadRequestException("You have already used " + coupon.getCode()
+                        + ". This code is limited to one order per customer.");
+            });
+        }
         BigDecimal discount = coupon.calculateDiscount(amount);
         return ResponseEntity.ok(Map.of(
             "valid", true,
