@@ -67,12 +67,24 @@ public class ProductController {
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String category,
             @RequestParam(required = false) String q,
-            @RequestParam(defaultValue = "name") String sort) {
+            @RequestParam(defaultValue = "name") String sort,
+            @RequestParam(required = false) String direction) {
         // Guard page/size and whitelist the sort column so bad input can't 500.
         int safePage = Math.max(0, page);
         int safeSize = Math.min(Math.max(1, size), 100);
         String safeSort = SORTABLE.contains(sort) ? sort : "name";
-        Pageable pageable = PageRequest.of(safePage, safeSize, Sort.by(safeSort));
+        // Explicit direction wins; otherwise sensible defaults per column
+        // (newest/highest first for time- and quality-ranked columns, A→Z for names).
+        Sort.Direction dir;
+        if ("desc".equalsIgnoreCase(direction)) {
+            dir = Sort.Direction.DESC;
+        } else if ("asc".equalsIgnoreCase(direction)) {
+            dir = Sort.Direction.ASC;
+        } else {
+            dir = ("createdAt".equals(safeSort) || "rating".equals(safeSort))
+                ? Sort.Direction.DESC : Sort.Direction.ASC;
+        }
+        Pageable pageable = PageRequest.of(safePage, safeSize, Sort.by(dir, safeSort));
         Page<Product> result;
         if (q != null && !q.isBlank()) {
             result = repo.search(q, pageable);
