@@ -149,13 +149,12 @@ public class OrderController {
         gstAmount = gstAmount.setScale(2, RoundingMode.HALF_UP);
         // Delivery is priced against the buyer's zone — the same calculation the
         // checkout showed them. A flat national rule here would charge a figure
-        // the customer was never quoted (free in Siliguri, ₹200 to the North East).
-        // It is billed ONCE for the whole order and discounted by the total
-        // quantity (DeliveryService.quantityTierFactor), never per product line.
-        int totalQty = req.getItems().stream()
-            .mapToInt(i -> i.getQuantity() == null ? 0 : i.getQuantity())
-            .sum();
-        var deliveryQuote = deliveryService.quote(req.getPincode(), subtotal, totalQty);
+        // the customer was never quoted (free in Siliguri, chargeable elsewhere).
+        // Delivery is charged PER PRODUCT LINE and scales with each line's own
+        // quantity: base × lineQty × slab(lineQty), summed over lines. The zone
+        // quote gives the raw per-unit base charge for the pincode; we apply the
+        // per-product formula here so the charge matches the cart/checkout preview.
+        var deliveryQuote = deliveryService.quote(req.getPincode(), subtotal);
         if (!deliveryQuote.isServiceable()) {
             throw new BadRequestException(deliveryQuote.getNote() != null
                 ? deliveryQuote.getNote()
@@ -163,10 +162,16 @@ public class OrderController {
         }
         boolean express = "express".equalsIgnoreCase(req.getDeliverySpeed())
                           && deliveryQuote.isExpressAvailable();
-        BigDecimal shipping = express
+        BigDecimal baseCharge = express
             ? (deliveryQuote.getExpressCharge()  != null ? deliveryQuote.getExpressCharge()  : BigDecimal.ZERO)
             : (deliveryQuote.getStandardCharge() != null ? deliveryQuote.getStandardCharge() : BigDecimal.ZERO);
-        shipping = shipping.setScale(2, RoundingMode.HALF_UP);
+        // Free zones (Siliguri) return a zero base and therefore stay free.
+        java.util.List<Integer> lineQtys = req.getItems().stream()
+            .map(i -> i.getQuantity() == null ? 0 : i.getQuantity())
+            .collect(java.util.stream.Collectors.toList());
+        BigDecimal shipping = com.navgrow.service.DeliveryService
+            .perProductDelivery(baseCharge, lineQtys)
+            .setScale(2, RoundingMode.HALF_UP);
 
         // Cash on delivery is only offered where the zone allows it — the same
         // rule the storefront showed the buyer. Asking for COD into a zone that

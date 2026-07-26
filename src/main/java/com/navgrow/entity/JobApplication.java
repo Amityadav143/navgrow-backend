@@ -7,6 +7,7 @@
  */
 package com.navgrow.entity;
 import com.navgrow.enums.ApplicationStatus;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -20,8 +21,13 @@ public class JobApplication {
     @Id @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    // Ignored in JSON: this is a LAZY back-reference, and serialising the proxy
+    // after the DB session closes throws (the "server error" the admin saw when
+    // opening the applications list). The display title is kept in `jobTitle`
+    // below, so nothing useful is lost by omitting the full job object.
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "job_id")
+    @JsonIgnore
     private JobListing job;
 
     @Column(name = "job_title", nullable = false) private String jobTitle;

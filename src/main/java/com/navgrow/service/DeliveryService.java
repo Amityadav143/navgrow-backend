@@ -154,44 +154,63 @@ public class DeliveryService {
     }
 
     /**
-     * Volume-based delivery multiplier, keyed on the TOTAL quantity in the order
-     * (not per product line). Delivery is a single order-level charge: the more
-     * units the buyer takes, the smaller the share of the zone's defined charge
-     * they pay. This is what turns "delivery billed per product" into "billed
-     * once for the whole order, discounted by volume":
+     * Per-unit volume discount, decided by a single product line's OWN quantity.
+     * Delivery is charged PER PRODUCT and scales with quantity, with a discount
+     * that grows as that line's quantity grows:
      *
-     *      1 unit      → 100% of the zone's delivery charge
+     *      1 unit      → 100% of the zone's per-unit delivery charge
      *      2–5 units   →  80%
      *      6–10 units  →  70%
      *      11+ units   →  50%
      *
-     * (The 2–5 / 5–10 bands share the endpoint 5, which is resolved to the lower
-     *  band — five units pay 80%, ten units pay 70%.)
+     * (The 2–5 / 5–10 bands share the endpoint 5, resolved to the lower band —
+     *  five units pay 80%, ten units pay 70%.)
      */
-    public static BigDecimal quantityTierFactor(int totalQty) {
-        if (totalQty <= 1)  return BigDecimal.ONE;
-        if (totalQty <= 5)  return new BigDecimal("0.80");
-        if (totalQty <= 10) return new BigDecimal("0.70");
+    public static BigDecimal quantityTierFactor(int lineQty) {
+        if (lineQty <= 1)  return BigDecimal.ONE;
+        if (lineQty <= 5)  return new BigDecimal("0.80");
+        if (lineQty <= 10) return new BigDecimal("0.70");
         return new BigDecimal("0.50");
     }
 
     /**
-     * Full quote that also applies the volume-based delivery tier for the given
-     * total quantity. The free-delivery threshold still wins (a free order stays
-     * free), and both standard and express charges are scaled by the same factor
-     * so the figure shown at checkout matches what the server charges.
+     * Delivery for a single product line: baseCharge × lineQty × slab(lineQty).
+     */
+    public static BigDecimal lineDelivery(BigDecimal baseCharge, int lineQty) {
+        if (baseCharge == null || lineQty <= 0) return BigDecimal.ZERO;
+        return baseCharge
+            .multiply(BigDecimal.valueOf(lineQty))
+            .multiply(quantityTierFactor(lineQty))
+            .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Total delivery for an order = Σ over lines of (base × lineQty × slab(lineQty)).
+     * The slab is per line's own quantity, so a cart of A×3 and B×7 at a ₹150 base
+     * is (150×3×0.8) + (150×7×0.7) = ₹1095. Free zones (base 0) stay free.
+     *
+     * @param lineQuantities the quantity of each product line in the order
+     */
+    public static BigDecimal perProductDelivery(BigDecimal baseCharge, java.util.List<Integer> lineQuantities) {
+        if (baseCharge == null || baseCharge.signum() <= 0 || lineQuantities == null) return BigDecimal.ZERO;
+        BigDecimal total = BigDecimal.ZERO;
+        for (Integer q : lineQuantities) {
+            if (q != null && q > 0) total = total.add(lineDelivery(baseCharge, q));
+        }
+        return total.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Quote for the delivery-check endpoint. Returns the zone's RAW per-unit base
+     * charge (no tier applied) — the per-product delivery total is worked out from
+     * the line quantities by the caller (storefront preview) and, authoritatively,
+     * at order time. Kept as a 3-arg overload for API compatibility; the quantity
+     * argument no longer scales the returned charge.
      */
     public DeliveryQuote quote(String pincode, BigDecimal orderValue, int totalQty) {
-        DeliveryQuote q = quote(pincode, orderValue);
-        if (!q.isServiceable()) return q;
-        BigDecimal factor = quantityTierFactor(totalQty);
-        if (q.getStandardCharge() != null) {
-            q.setStandardCharge(q.getStandardCharge().multiply(factor).setScale(2, RoundingMode.HALF_UP));
-        }
-        if (q.getExpressCharge() != null) {
-            q.setExpressCharge(q.getExpressCharge().multiply(factor).setScale(2, RoundingMode.HALF_UP));
-        }
-        return q;
+        // The base charge is per-unit and the tier is per-line, so there is nothing
+        // sensible to scale by a single total here — return the raw zone quote.
+        return quote(pincode, orderValue);
     }
 
     /**
