@@ -45,6 +45,7 @@ public class ProductController {
         BigDecimal gstRate;
         String hsnCode;
         Integer stockQty;
+        BigDecimal deliveryCharge;   // per-unit delivery base for this product (null = zone default)
         String badge;
         String imageUrl;
         boolean featured;
@@ -247,6 +248,7 @@ public class ProductController {
             p.setGstRate(new BigDecimal("18"));
         }
         if (req.getStockQty() != null) p.setStockQty(req.getStockQty());
+        p.setDeliveryCharge(req.getDeliveryCharge());   // null clears it → zone default
         p.setBadge(req.getBadge());
         p.setImageUrl(req.getImageUrl());
         p.setFeatured(req.isFeatured());

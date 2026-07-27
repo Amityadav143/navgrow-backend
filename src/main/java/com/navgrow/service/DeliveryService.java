@@ -159,18 +159,18 @@ public class DeliveryService {
      * that grows as that line's quantity grows:
      *
      *      1 unit      → 100% of the zone's per-unit delivery charge
-     *      2–5 units   →  80%
-     *      6–10 units  →  70%
+     *      2–5 units   →  70%
+     *      6–10 units  →  60%
      *      11+ units   →  50%
      *
-     * (The 2–5 / 5–10 bands share the endpoint 5, resolved to the lower band —
-     *  five units pay 80%, ten units pay 70%.)
+     * (The 2–5 / 6–10 bands share the endpoint 5, resolved to the lower band —
+     *  five units pay 70%, ten units pay 60%.)
      */
     public static BigDecimal quantityTierFactor(int lineQty) {
         if (lineQty <= 1)  return BigDecimal.ONE;
-        if (lineQty <= 5)  return new BigDecimal("0.80");
-        if (lineQty <= 10) return new BigDecimal("0.70");
-        return new BigDecimal("0.50");
+        if (lineQty <= 5)  return new BigDecimal("0.70");  // 2–5: 70%
+        if (lineQty <= 10) return new BigDecimal("0.60");  // 6–10: 60%
+        return new BigDecimal("0.50");                     // 11+: 50%
     }
 
     /**
@@ -187,7 +187,7 @@ public class DeliveryService {
     /**
      * Total delivery for an order = Σ over lines of (base × lineQty × slab(lineQty)).
      * The slab is per line's own quantity, so a cart of A×3 and B×7 at a ₹150 base
-     * is (150×3×0.8) + (150×7×0.7) = ₹1095. Free zones (base 0) stay free.
+     * is (150×3×0.7) + (150×7×0.6) = ₹945. Free zones (base 0) stay free.
      *
      * @param lineQuantities the quantity of each product line in the order
      */
@@ -196,6 +196,28 @@ public class DeliveryService {
         BigDecimal total = BigDecimal.ZERO;
         for (Integer q : lineQuantities) {
             if (q != null && q > 0) total = total.add(lineDelivery(baseCharge, q));
+        }
+        return total.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /** One line's base charge + quantity, for the mixed per-product calculation. */
+    public record DeliveryLine(BigDecimal perUnitBase, int quantity) {}
+
+    /**
+     * Total delivery where each line can carry its OWN per-unit base charge (a
+     * heavy product costs more to ship than a light one). For each line we use the
+     * product's own charge when set, else the zone's default base. The slab is
+     * still decided by that line's quantity.
+     */
+    public static BigDecimal perProductDelivery(BigDecimal zoneDefaultBase, java.util.List<DeliveryLine> lines, boolean freeZone) {
+        if (freeZone || lines == null) return BigDecimal.ZERO;
+        BigDecimal total = BigDecimal.ZERO;
+        for (DeliveryLine l : lines) {
+            if (l == null || l.quantity() <= 0) continue;
+            BigDecimal base = (l.perUnitBase() != null && l.perUnitBase().signum() > 0)
+                ? l.perUnitBase() : zoneDefaultBase;
+            if (base == null || base.signum() <= 0) continue;   // free line
+            total = total.add(lineDelivery(base, l.quantity()));
         }
         return total.setScale(2, RoundingMode.HALF_UP);
     }

@@ -131,7 +131,11 @@ app:
     - https://www.navgrow.org
 
 # ── SMS ────────────────────────────────────────────────────────────────────
-# provider: log (dev, default) | msg91 | twilio
+# provider: log | msg91 | twilio
+#   IMPORTANT: "log" only WRITES messages to the application log — it does NOT
+#   send real SMS. For real delivery set SMS_PROVIDER=msg91 (or twilio) with
+#   credentials, OR configure it in the admin panel (Admin → Notifications),
+#   whose values take precedence over these.
 sms:
   provider: ${SMS_PROVIDER:log}
   sender-id: ${SMS_SENDER_ID:NAVGRW}

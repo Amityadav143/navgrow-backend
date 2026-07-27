@@ -22,37 +22,50 @@ import org.springframework.stereotype.Service;
 public class EmailService {
 
     private final JavaMailSender mailSender;
+    // ObjectProvider prevents a circular/early-init dependency at startup.
+    private final org.springframework.beans.factory.ObjectProvider<NotificationSettingsService> settingsProvider;
 
     @Value("${app.frontend-url:http://navgrow.org}")
     private String frontendUrl;
 
-    /** Recruitment inbox. Override with CAREERS_EMAIL if your mailbox differs. */
+    /** Recruitment inbox fallback. Admin panel value (if set) takes precedence. */
     @Value("${app.careers-email:careers@navgrow.org}")
-    private String careersEmail;
+    private String careersEmailDefault;
 
     @Value("${app.contact-email:info@navgrow.org}")
-    private String contactEmail;
+    private String contactEmailDefault;
 
     @Value("${app.name:Navgrow Engineering}")
     private String appName;
 
-    /** The "From" address — same as SMTP username */
+    /** The "From" address fallback — same as SMTP username unless admin overrides. */
     @Value("${spring.mail.username:info@navgrow.org}")
-    private String fromEmail;
+    private String fromEmailDefault;
+
+    // ── Effective, admin-configurable recipients (DB row wins over env) ────────
+    private NotificationSettingsService settings() { return settingsProvider.getIfAvailable(); }
+    private boolean emailEnabled() { var s = settings(); return s == null || s.emailEnabled(); }
+    private String fromEmail()    { var s = settings(); return s == null ? fromEmailDefault    : s.fromEmail(); }
+    private String contactEmail() { var s = settings(); return s == null ? contactEmailDefault : s.contactEmail(); }
+    private String careersEmail() { var s = settings(); return s == null ? careersEmailDefault : s.careersEmail(); }
+    private String ordersEmail()  { var s = settings(); return s == null ? contactEmailDefault : s.ordersEmail(); }
+    private String quotesEmail()  { var s = settings(); return s == null ? contactEmailDefault : s.quotesEmail(); }
 
     // ── Contact notification ──────────────────────────────────────────────────
     @Async
-    public void sendContactNotification(String fromName, String fromEmail,
+    public void sendContactNotification(String fromName, String senderEmail,
                                         String subject, String message) {
+        if (!emailEnabled()) { log.info("[EMAIL] Disabled by admin settings — contact notice not sent."); return; }
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
-            helper.setFrom(fromEmail);
-            helper.setTo(contactEmail);
+            helper.setFrom(fromEmail());
+            helper.setTo(contactEmail());
+            if (senderEmail != null && !senderEmail.isBlank()) helper.setReplyTo(senderEmail);
             helper.setSubject("[Website Enquiry] " + subject);
-            helper.setText(buildContactHtml(fromName, fromEmail, subject, message), true);
+            helper.setText(buildContactHtml(fromName, senderEmail, subject, message), true);
             mailSender.send(mime);
-            log.info("Contact notification sent for: {}", fromEmail);
+            log.info("Contact notification sent to {} for: {}", contactEmail(), senderEmail);
         } catch (Exception e) {
             log.error("Failed to send contact notification: {}", e.getMessage());
         }
@@ -65,7 +78,7 @@ public class EmailService {
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
-            helper.setFrom(fromEmail);
+            helper.setFrom(fromEmail());
             helper.setTo(toEmail);
             helper.setSubject("Order Confirmed – " + orderNumber + " | Navgrow Engineering");
             helper.setText(buildOrderHtml(toName, orderNumber, total), true);
@@ -82,7 +95,7 @@ public class EmailService {
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
-            helper.setFrom(fromEmail);
+            helper.setFrom(fromEmail());
             helper.setTo(toEmail);
             helper.setSubject("Quote Request Received – Navgrow Engineering");
             helper.setText(buildQuoteHtml(toName, serviceType), true);
@@ -99,11 +112,13 @@ public class EmailService {
      */
     @Async
     public void sendQuoteAdminNotification(com.navgrow.entity.QuoteRequest q) {
+        if (!emailEnabled()) { log.info("[EMAIL] Disabled — quote notice not sent."); return; }
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
-            helper.setFrom(fromEmail);
-            helper.setTo(contactEmail);
+            helper.setFrom(fromEmail());
+            helper.setTo(quotesEmail());
+            if (q.getEmail() != null && !q.getEmail().isBlank()) helper.setReplyTo(q.getEmail());
             helper.setSubject("[New Quote Request] " + q.getServiceType() + " — " + q.getName());
             String est = q.getEstLow() != null
                 ? "₹" + q.getEstLow().toPlainString() + " – ₹" + (q.getEstHigh() != null ? q.getEstHigh().toPlainString() : "?")
@@ -140,8 +155,8 @@ public class EmailService {
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
-            helper.setFrom(fromEmail);
-            helper.setTo(careersEmail);
+            helper.setFrom(fromEmail());
+            helper.setTo(careersEmail());
             helper.setReplyTo(app.getEmail());
             helper.setSubject("[Application] " + app.getJobTitle() + " \u2014 " + app.getName());
             String html = "<div style=\"font-family:Arial,sans-serif;max-width:560px\">"
@@ -164,9 +179,9 @@ public class EmailService {
         try {
             var mime2   = mailSender.createMimeMessage();
             var helper2 = new MimeMessageHelper(mime2, true, "UTF-8");
-            helper2.setFrom(fromEmail);
+            helper2.setFrom(fromEmail());
             helper2.setTo(app.getEmail());
-            helper2.setReplyTo(careersEmail);
+            helper2.setReplyTo(careersEmail());
             helper2.setSubject("We\u2019ve received your application \u2014 " + app.getJobTitle());
             String html2 = "<div style=\"font-family:Arial,sans-serif;max-width:560px\">"
                 + "<h2 style=\"color:#1e3a8a\">Thank you, "
@@ -200,7 +215,7 @@ public class EmailService {
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
-            helper.setFrom(fromEmail);
+            helper.setFrom(fromEmail());
             helper.setTo(toEmail);
             helper.setSubject("Your Navgrow Company Profile & Catalogue");
             String html = """
@@ -225,7 +240,7 @@ public class EmailService {
                   </p>
                 </div>""".formatted(
                     org.springframework.web.util.HtmlUtils.htmlEscape(toName),
-                    frontendUrl, contactEmail, contactEmail);
+                    frontendUrl, contactEmail(), contactEmail());
             helper.setText(html, true);
             mailSender.send(mime);
             log.info("Catalogue email sent to lead {}", toEmail);
@@ -240,8 +255,8 @@ public class EmailService {
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
-            helper.setFrom(fromEmail);
-            helper.setTo(contactEmail);
+            helper.setFrom(fromEmail());
+            helper.setTo(contactEmail());
             helper.setSubject("[New Catalogue Lead] " + lead.getName());
             String html = """
                 <div style="font-family:Arial,sans-serif;max-width:560px">
@@ -272,7 +287,7 @@ public class EmailService {
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
-            helper.setFrom(fromEmail);
+            helper.setFrom(fromEmail());
             helper.setTo(toEmail);
             helper.setSubject("Reset Your Password — Navgrow Engineering");
             String resetUrl = frontendUrl + "/reset-password?token=" + token;
@@ -300,7 +315,7 @@ public class EmailService {
         try {
             SimpleMailMessage mail = new SimpleMailMessage();
             mail.setTo(toEmail);
-            mail.setFrom(fromEmail);
+            mail.setFrom(fromEmail());
             mail.setSubject("Re: " + subject + " — Navgrow Engineering");
             mail.setText(
                 "Dear " + toName + ",\n\n" +
@@ -355,7 +370,7 @@ public class EmailService {
         try {
             var mime = mailSender.createMimeMessage();
             var helper = new org.springframework.mail.javamail.MimeMessageHelper(mime, true, "UTF-8");
-            helper.setFrom(fromEmail);
+            helper.setFrom(fromEmail());
             helper.setTo(toEmail);
             helper.setSubject("RFQ Received: " + rfqNumber + " — Navgrow Engineering");
             helper.setText(
@@ -385,7 +400,7 @@ public class EmailService {
         try {
             var mime = mailSender.createMimeMessage();
             var helper = new org.springframework.mail.javamail.MimeMessageHelper(mime, true, "UTF-8");
-            helper.setFrom(fromEmail);
+            helper.setFrom(fromEmail());
             helper.setTo(toEmail);
             helper.setSubject("Your Quotation is Ready: " + rfqNumber + " — Navgrow Engineering");
             helper.setText(
@@ -424,8 +439,8 @@ public class EmailService {
         try {
             var mime = mailSender.createMimeMessage();
             var helper = new org.springframework.mail.javamail.MimeMessageHelper(mime, true, "UTF-8");
-            helper.setFrom(fromEmail);
-            helper.setTo(contactEmail);
+            helper.setFrom(fromEmail());
+            helper.setTo(contactEmail());
             if (buyerEmail != null && !buyerEmail.isBlank()) helper.setReplyTo(buyerEmail);
             String verb = accepted ? "ACCEPTED" : "REJECTED";
             String accent = accepted ? "#059669" : "#dc2626";
@@ -482,7 +497,7 @@ public class EmailService {
             }
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
-            helper.setFrom(fromEmail);
+            helper.setFrom(fromEmail());
             helper.setTo(order.getCustomerEmail());
             helper.setSubject(heading + " – " + order.getOrderNumber() + " | Navgrow Engineering");
             StringBuilder html = new StringBuilder()
@@ -507,7 +522,7 @@ public class EmailService {
                 .append("<p><a href='").append(frontendUrl).append("/track/").append(safe(order.getOrderNumber()))
                 .append("' style='color:#2563eb'>Track your order</a></p>")
                 .append("<p style='color:#64748b;font-size:13px;margin-top:20px'>Questions? ")
-                .append("<a href='mailto:").append(contactEmail).append("'>").append(contactEmail).append("</a> | +91 89270 70972</p>")
+                .append("<a href='mailto:").append(contactEmail()).append("'>").append(contactEmail()).append("</a> | +91 89270 70972</p>")
                 .append("<p>Thank you for choosing Navgrow Engineering.</p></div>");
             helper.setText(html.toString(), true);
             mailSender.send(mime);
@@ -526,11 +541,12 @@ public class EmailService {
      */
     @Async
     public void sendNewOrderAdminNotification(com.navgrow.entity.Order order) {
+        if (!emailEnabled()) { log.info("[EMAIL] Disabled — new-order notice not sent."); return; }
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
-            helper.setFrom(fromEmail);
-            helper.setTo(contactEmail);
+            helper.setFrom(fromEmail());
+            helper.setTo(ordersEmail());
             if (order.getCustomerEmail() != null && !order.getCustomerEmail().isBlank())
                 helper.setReplyTo(order.getCustomerEmail());
             helper.setSubject("New order " + order.getOrderNumber() + " — ₹"
@@ -580,7 +596,7 @@ public class EmailService {
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
-            helper.setFrom(fromEmail);
+            helper.setFrom(fromEmail());
             helper.setTo(toEmail);
             helper.setSubject("Welcome to " + appName);
             String html = "<div style='font-family:Inter,Arial,sans-serif;max-width:560px;margin:auto'>"
@@ -591,13 +607,34 @@ public class EmailService {
                 + "<p><a href='" + frontendUrl + "/shop' style='background:#2563eb;color:#fff;padding:10px 18px;"
                 + "border-radius:8px;text-decoration:none;display:inline-block'>Browse the shop</a></p>"
                 + "<p style='color:#64748b;font-size:13px;margin-top:20px'>Need help? "
-                + "<a href='mailto:" + contactEmail + "'>" + contactEmail + "</a> | +91 89270 70972</p></div>";
+                + "<a href='mailto:" + contactEmail() + "'>" + contactEmail() + "</a> | +91 89270 70972</p></div>";
             helper.setText(html, true);
             mailSender.send(mime);
             log.info("Welcome email sent to {}", toEmail);
         } catch (Exception e) {
             log.warn("Failed to send welcome email to {}: {}", toEmail, e.getMessage());
         }
+    }
+
+    /**
+     * Sends a plain test email to an arbitrary address so an admin can confirm
+     * SMTP is actually working from the settings screen. Throws on failure so the
+     * controller can report the real reason (unlike the fire-and-forget notices).
+     */
+    public void sendTestEmail(String toEmail) throws Exception {
+        var mime   = mailSender.createMimeMessage();
+        var helper = new MimeMessageHelper(mime, true, "UTF-8");
+        helper.setFrom(fromEmail());
+        helper.setTo(toEmail);
+        helper.setSubject("Navgrow test email — configuration OK");
+        helper.setText(
+            "<div style='font-family:Arial,sans-serif'>"
+            + "<h2 style='color:#2563eb'>It works ✅</h2>"
+            + "<p>This is a test email from your Navgrow admin panel. If you're reading it, "
+            + "outgoing email is configured correctly.</p>"
+            + "<p style='color:#64748b;font-size:13px'>Sent from " + fromEmail() + "</p></div>", true);
+        mailSender.send(mime);
+        log.info("Test email sent to {}", toEmail);
     }
 
     private String safe(String s) { return s == null ? "" : s.replaceAll("[<>]", ""); }

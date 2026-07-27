@@ -56,6 +56,13 @@ public class Product {
     @Column(name = "min_order_qty")
     private Integer minOrderQty = 1;
 
+    // Per-unit base delivery charge for THIS product, set by the admin. Products
+    // vary in weight/bulk, so a heavy item can carry a higher base than a light
+    // one. When null, the zone's default per-unit charge is used instead. The
+    // per-quantity slab discount is then applied on top (see DeliveryService).
+    @Column(name = "delivery_charge", precision = 10, scale = 2)
+    private BigDecimal deliveryCharge;
+
     private String badge;
 
     @Column(name = "image_url", columnDefinition = "TEXT")

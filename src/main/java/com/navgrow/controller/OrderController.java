@@ -99,6 +99,9 @@ public class OrderController {
         List<OrderItem> items = new ArrayList<>();
         BigDecimal subtotal = BigDecimal.ZERO;
         BigDecimal gstAmount = BigDecimal.ZERO;
+        // Each line's own per-unit delivery base (product override) + quantity, so
+        // heavier products can carry a higher shipping base than light ones.
+        java.util.List<com.navgrow.service.DeliveryService.DeliveryLine> deliveryLines = new ArrayList<>();
 
         for (OrderItemReq itemReq : req.getItems()) {
             Product product = productRepo.findById(itemReq.getProductId())
@@ -107,6 +110,8 @@ public class OrderController {
             if (itemReq.getQuantity() == null || itemReq.getQuantity() < 1) {
                 throw new BadRequestException("Invalid quantity for " + product.getName());
             }
+            deliveryLines.add(new com.navgrow.service.DeliveryService.DeliveryLine(
+                product.getDeliveryCharge(), itemReq.getQuantity()));
             // Prevent overselling: reject if the requested quantity exceeds available stock.
             if (product.getStockQty() != null && itemReq.getQuantity() > product.getStockQty()) {
                 throw new BadRequestException("Only " + product.getStockQty()
@@ -165,12 +170,10 @@ public class OrderController {
         BigDecimal baseCharge = express
             ? (deliveryQuote.getExpressCharge()  != null ? deliveryQuote.getExpressCharge()  : BigDecimal.ZERO)
             : (deliveryQuote.getStandardCharge() != null ? deliveryQuote.getStandardCharge() : BigDecimal.ZERO);
-        // Free zones (Siliguri) return a zero base and therefore stay free.
-        java.util.List<Integer> lineQtys = req.getItems().stream()
-            .map(i -> i.getQuantity() == null ? 0 : i.getQuantity())
-            .collect(java.util.stream.Collectors.toList());
+        // Free zones (Siliguri) return a zero base and stay free.
+        boolean freeZone = baseCharge == null || baseCharge.signum() <= 0;
         BigDecimal shipping = com.navgrow.service.DeliveryService
-            .perProductDelivery(baseCharge, lineQtys)
+            .perProductDelivery(baseCharge, deliveryLines, freeZone)
             .setScale(2, RoundingMode.HALF_UP);
 
         // Cash on delivery is only offered where the zone allows it — the same
