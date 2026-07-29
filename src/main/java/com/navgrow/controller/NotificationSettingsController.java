@@ -114,9 +114,23 @@ public class NotificationSettingsController {
             emailService.sendTestEmail(to);
             return ResponseEntity.ok(Map.of("message", "Test email sent to " + to + ". Check the inbox (and spam)."));
         } catch (Exception e) {
-            log.warn("Test email to {} failed: {}", to, e.getMessage());
-            return ResponseEntity.status(502).body(Map.of("message",
-                "Could not send: " + (e.getMessage() == null ? "unknown SMTP error" : e.getMessage())));
+            String raw = e.getMessage() == null ? "unknown SMTP error" : e.getMessage();
+            log.warn("Test email to {} failed: {}", to, raw);
+            // Turn the raw SMTP error into something the admin can act on.
+            String hint = "";
+            String low = raw.toLowerCase();
+            if (low.contains("authentication") || low.contains("535") || low.contains("credentials")) {
+                hint = " — the mail server rejected the username/password. Check MAIL_USERNAME and "
+                     + "MAIL_PASSWORD on the server. For Hostinger/Gmail you usually need the mailbox's "
+                     + "own password (or an app-specific password), not your control-panel login.";
+            } else if (low.contains("connect") || low.contains("timeout") || low.contains("could not connect")) {
+                hint = " — could not reach the mail server. Check MAIL_HOST/MAIL_PORT and that outbound "
+                     + "port 587 is open on the server.";
+            } else if (low.contains("starttls") || low.contains("ssl") || low.contains("tls")) {
+                hint = " — a TLS/SSL negotiation problem. Confirm the port (587 = STARTTLS, 465 = SSL) "
+                     + "matches the mailbox settings.";
+            }
+            return ResponseEntity.status(502).body(Map.of("message", "Could not send: " + raw + hint));
         }
     }
 
