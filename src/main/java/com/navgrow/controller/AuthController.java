@@ -181,7 +181,8 @@ public class AuthController {
         }
         if (req.getPhone() != null && !req.getPhone().isBlank()) {
             try {
-                smsService.send(req.getPhone(),
+                smsService.send(req.getPhone(), com.navgrow.service.SmsEvent.WELCOME,
+                    new java.util.LinkedHashMap<>(),
                     "Welcome to Navgrow Engineering! Your account is ready. Shop industrial supplies at navgrow.org");
             } catch (Exception e) {
                 log.warn("Welcome SMS failed for {}: {}", req.getPhone(), e.getMessage());

@@ -48,10 +48,27 @@ public class NotificationSettings {
     @Column(name = "sms_provider")        private String smsProvider;
     @Column(name = "sms_sender_id")       private String smsSenderId;
     @Column(name = "msg91_auth_key")      private String msg91AuthKey;
-    @Column(name = "msg91_template_id")   private String msg91TemplateId;
+    @Column(name = "msg91_template_id")   private String msg91TemplateId;   // OTP template (C1)
     @Column(name = "twilio_account_sid")  private String twilioAccountSid;
     @Column(name = "twilio_auth_token")   private String twilioAuthToken;
     @Column(name = "twilio_from_number")  private String twilioFromNumber;
+
+    // ── Per-event MSG91 Flow template IDs (C2–C12) ─────────────────────────────
+    // MSG91's Flow API is template-driven: each transactional message needs its own
+    // approved DLT flow/template id. Blank = that event won't send via MSG91 Flow
+    // (it falls back to the plain text path, which most operators will reject, so
+    // these should be filled once approved).
+    @Column(name = "tpl_welcome")         private String tplWelcome;         // C2
+    @Column(name = "tpl_order_cod")       private String tplOrderCod;        // C3
+    @Column(name = "tpl_order_online")    private String tplOrderOnline;     // C4
+    @Column(name = "tpl_order_shipped")   private String tplOrderShipped;    // C5
+    @Column(name = "tpl_order_delivered") private String tplOrderDelivered;  // C6
+    @Column(name = "tpl_order_cancelled") private String tplOrderCancelled;  // C7
+    @Column(name = "tpl_order_processing")private String tplOrderProcessing; // C8
+    @Column(name = "tpl_order_refunded")  private String tplOrderRefunded;   // C9
+    @Column(name = "tpl_password_changed")private String tplPasswordChanged; // C10
+    @Column(name = "tpl_rfq_received")    private String tplRfqReceived;     // C11
+    @Column(name = "tpl_rfq_ready")       private String tplRfqReady;        // C12
 
     @Builder.Default @Column(name = "updated_at") private LocalDateTime updatedAt = LocalDateTime.now();
 

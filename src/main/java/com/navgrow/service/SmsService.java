@@ -70,6 +70,61 @@ public class SmsService {
     private String effTwilioTok(){ var s = dbSettings(); return pick(s == null ? null : s.getTwilioAuthToken(), twilioToken); }
     private String effTwilioFrom(){var s = dbSettings(); return pick(s == null ? null : s.getTwilioFromNumber(), twilioFrom); }
 
+    /** Resolve the MSG91 Flow template id for a given event from admin settings. */
+    private String templateIdFor(SmsEvent event) {
+        var s = dbSettings();
+        if (s == null || event == null) return null;
+        return switch (event) {
+            case WELCOME          -> s.getTplWelcome();
+            case ORDER_COD        -> s.getTplOrderCod();
+            case ORDER_ONLINE     -> s.getTplOrderOnline();
+            case ORDER_SHIPPED    -> s.getTplOrderShipped();
+            case ORDER_DELIVERED  -> s.getTplOrderDelivered();
+            case ORDER_CANCELLED  -> s.getTplOrderCancelled();
+            case ORDER_PROCESSING -> s.getTplOrderProcessing();
+            case ORDER_REFUNDED   -> s.getTplOrderRefunded();
+            case PASSWORD_CHANGED -> s.getTplPasswordChanged();
+            case RFQ_RECEIVED     -> s.getTplRfqReceived();
+            case RFQ_READY        -> s.getTplRfqReady();
+        };
+    }
+
+    /**
+     * Event-aware send. For MSG91 this uses the event's DLT Flow template id and
+     * named variables (the reliable, DLT-compliant path). For log/twilio — and for
+     * MSG91 when no template id is configured yet — it falls back to the composed
+     * `fallbackText` so nothing silently stops working during setup.
+     *
+     * @param phone        recipient
+     * @param event        which transactional template to use
+     * @param vars         ordered, named variables for the template (may be empty)
+     * @param fallbackText the human-readable message used by log/twilio/fallback
+     */
+    public boolean send(String phone, SmsEvent event, java.util.LinkedHashMap<String, String> vars, String fallbackText) {
+        if (!smsEnabled()) { log.info("[SMS] Disabled by admin settings — not sending."); return false; }
+        String to = normalise(phone);
+        if (to == null) { log.warn("[SMS] Skipped — invalid phone '{}'", phone); return false; }
+
+        String prov = effProvider();
+        try {
+            if ("msg91".equalsIgnoreCase(prov)) {
+                String flowId = templateIdFor(event);
+                if (flowId != null && !flowId.isBlank()) {
+                    return sendViaMsg91Flow(to, flowId, vars, fallbackText);
+                }
+                // No template id configured for this event yet — fall back to text
+                // so setup is incremental, and make the reason visible in logs.
+                log.warn("[SMS:msg91] No Flow template id for event {} — sending as plain text (may be rejected by DLT). Configure it in Admin → Notifications.", event);
+                return sendViaMsg91(to, fallbackText, null);
+            }
+            if ("twilio".equalsIgnoreCase(prov)) return sendViaTwilio(to, fallbackText);
+            return sendViaLog(to, fallbackText);
+        } catch (Exception e) {
+            log.error("[SMS] Delivery failed for {} (event {}): {}", to, event, e.getMessage());
+            return false;
+        }
+    }
+
     /** Send a plain transactional SMS. Returns true if the send was attempted successfully. */
     public boolean send(String phone, String message) {
         if (!smsEnabled()) { log.info("[SMS] Disabled by admin settings — not sending."); return false; }
@@ -156,6 +211,40 @@ public class SmsService {
             restTemplate.postForEntity("https://control.msg91.com/api/v5/flow/", req, String.class);
         }
         log.info("[SMS:msg91] Sent to {}", recipient);
+        return true;
+    }
+
+    /**
+     * MSG91 Flow API with an explicit DLT template (flow) id and named variables.
+     * This is the DLT-compliant path for transactional messages. Payload shape
+     * follows MSG91 v5 Flow: { template_id, sender, recipients: [{ mobiles, ...vars }] }.
+     */
+    private boolean sendViaMsg91Flow(String to, String flowId,
+                                     java.util.LinkedHashMap<String, String> vars, String fallbackText) {
+        String authKey = effMsg91Key(), sender = effSenderId();
+        if (authKey == null || authKey.isBlank()) {
+            log.warn("[SMS:msg91] Missing auth key — falling back to log.");
+            return sendViaLog(to, fallbackText);
+        }
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("authkey", authKey);
+
+        String recipient = to.startsWith("+") ? to.substring(1) : to;
+
+        // Recipient object carries the mobile plus each template variable as a key.
+        Map<String, Object> recip = new HashMap<>();
+        recip.put("mobiles", recipient);
+        if (vars != null) vars.forEach(recip::put);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("template_id", flowId);
+        if (sender != null && !sender.isBlank()) body.put("sender", sender);
+        body.put("recipients", new Object[]{ recip });
+
+        HttpEntity<Map<String, Object>> req = new HttpEntity<>(body, headers);
+        restTemplate.postForEntity("https://control.msg91.com/api/v5/flow/", req, String.class);
+        log.info("[SMS:msg91:flow] Sent template {} to {}", flowId, recipient);
         return true;
     }
 

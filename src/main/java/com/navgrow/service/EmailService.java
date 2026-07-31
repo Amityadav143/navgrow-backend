@@ -50,6 +50,7 @@ public class EmailService {
     private String careersEmail() { var s = settings(); return s == null ? careersEmailDefault : s.careersEmail(); }
     private String ordersEmail()  { var s = settings(); return s == null ? contactEmailDefault : s.ordersEmail(); }
     private String quotesEmail()  { var s = settings(); return s == null ? contactEmailDefault : s.quotesEmail(); }
+    private String supportEmail() { var s = settings(); return s == null ? contactEmailDefault : s.supportEmail(); }
 
     // ── Contact notification ──────────────────────────────────────────────────
     @Async
@@ -75,6 +76,7 @@ public class EmailService {
     @Async
     public void sendOrderConfirmation(String toEmail, String toName,
                                       String orderNumber, String total) {
+        if (!emailEnabled()) { log.info("[EMAIL] Disabled — order confirmation not sent."); return; }
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
@@ -92,6 +94,7 @@ public class EmailService {
     // ── Quote acknowledgement ─────────────────────────────────────────────────
     @Async
     public void sendQuoteAcknowledgement(String toEmail, String toName, String serviceType) {
+        if (!emailEnabled()) { log.info("[EMAIL] Disabled — quote acknowledgement not sent."); return; }
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
@@ -152,6 +155,7 @@ public class EmailService {
     /** Careers inbox gets the application; the candidate gets an acknowledgement. */
     @Async
     public void sendJobApplicationReceived(com.navgrow.entity.JobApplication app) {
+        if (!emailEnabled()) { log.info("[EMAIL] Disabled — job application receipt not sent."); return; }
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
@@ -212,6 +216,7 @@ public class EmailService {
     /** Sends the requester a friendly note with a link back to the catalogue. */
     @Async
     public void sendCatalogueToLead(String toEmail, String toName) {
+        if (!emailEnabled()) { log.info("[EMAIL] Disabled — catalogue not sent."); return; }
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
@@ -252,11 +257,12 @@ public class EmailService {
     /** Alerts the office inbox that a new catalogue lead was captured. */
     @Async
     public void sendCatalogueLeadNotification(com.navgrow.entity.CatalogueLead lead) {
+        if (!emailEnabled()) { log.info("[EMAIL] Disabled — catalogue lead notice not sent."); return; }
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
             helper.setFrom(fromEmail());
-            helper.setTo(contactEmail());
+            helper.setTo(supportEmail());
             helper.setSubject("[New Catalogue Lead] " + lead.getName());
             String html = """
                 <div style="font-family:Arial,sans-serif;max-width:560px">
@@ -284,13 +290,15 @@ public class EmailService {
     // ── Password reset ────────────────────────────────────────────────────────
     @Async
     public void sendPasswordResetEmail(String toEmail, String toName, String token) {
+        if (!emailEnabled()) { log.info("[EMAIL] Disabled — password reset email not sent."); return; }
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");
             helper.setFrom(fromEmail());
             helper.setTo(toEmail);
             helper.setSubject("Reset Your Password — Navgrow Engineering");
-            String resetUrl = frontendUrl + "/reset-password?token=" + token;
+            String base = frontendUrl == null ? "" : frontendUrl.replaceAll("/+$", "");
+            String resetUrl = base + "/reset-password?token=" + token;
             helper.setText(
                 "<html><body style='font-family:sans-serif'>" +
                 "<h2 style='color:#2563eb'>Reset Your Password</h2>" +
@@ -312,6 +320,7 @@ public class EmailService {
     // ── Admin contact reply ───────────────────────────────────────────────────
     @Async
     public void sendReplyEmail(String toEmail, String toName, String subject, String replyText) {
+        if (!emailEnabled()) { log.info("[EMAIL] Disabled — reply email not sent."); return; }
         try {
             SimpleMailMessage mail = new SimpleMailMessage();
             mail.setTo(toEmail);
@@ -367,6 +376,7 @@ public class EmailService {
     // ── RFQ acknowledgement (buyer submitted) ─────────────────────────────────
     @Async
     public void sendRfqAcknowledgement(String toEmail, String toName, String rfqNumber, int itemCount) {
+        if (!emailEnabled()) { log.info("[EMAIL] Disabled — RFQ acknowledgement not sent."); return; }
         try {
             var mime = mailSender.createMimeMessage();
             var helper = new org.springframework.mail.javamail.MimeMessageHelper(mime, true, "UTF-8");
@@ -397,6 +407,7 @@ public class EmailService {
     @Async
     public void sendRfqQuoted(String toEmail, String toName, String rfqNumber,
                               String total, String validUntil) {
+        if (!emailEnabled()) { log.info("[EMAIL] Disabled — RFQ quote not sent."); return; }
         try {
             var mime = mailSender.createMimeMessage();
             var helper = new org.springframework.mail.javamail.MimeMessageHelper(mime, true, "UTF-8");
@@ -436,11 +447,12 @@ public class EmailService {
     @Async
     public void sendRfqDecisionToTeam(String rfqNumber, String buyerName, String buyerEmail,
                                       String buyerPhone, boolean accepted, String total, String reason) {
+        if (!emailEnabled()) { log.info("[EMAIL] Disabled — RFQ decision notice not sent."); return; }
         try {
             var mime = mailSender.createMimeMessage();
             var helper = new org.springframework.mail.javamail.MimeMessageHelper(mime, true, "UTF-8");
             helper.setFrom(fromEmail());
-            helper.setTo(contactEmail());
+            helper.setTo(quotesEmail());
             if (buyerEmail != null && !buyerEmail.isBlank()) helper.setReplyTo(buyerEmail);
             String verb = accepted ? "ACCEPTED" : "REJECTED";
             String accent = accepted ? "#059669" : "#dc2626";
@@ -484,6 +496,7 @@ public class EmailService {
      */
     @Async
     public void sendOrderStatusUpdate(com.navgrow.entity.Order order) {
+        if (!emailEnabled()) { log.info("[EMAIL] Disabled — order status update not sent."); return; }
         try {
             String status = order.getStatus() == null ? "" : order.getStatus().name();
             String heading, intro, accent = "#2563eb";
@@ -593,6 +606,7 @@ public class EmailService {
     /** A short welcome after registration. Skipped for phone-only synthetic emails by the caller. */
     @Async
     public void sendWelcomeEmail(String toEmail, String toName) {
+        if (!emailEnabled()) { log.info("[EMAIL] Disabled — welcome email not sent."); return; }
         try {
             var mime   = mailSender.createMimeMessage();
             var helper = new MimeMessageHelper(mime, true, "UTF-8");

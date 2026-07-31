@@ -63,7 +63,19 @@ public class NotificationSettingsController {
             Map.entry("msg91TemplateId",      nz(s.getMsg91TemplateId())),
             Map.entry("twilioAccountSidMask", mask(s.getTwilioAccountSid())),
             Map.entry("twilioAuthTokenMask",  mask(s.getTwilioAuthToken())),
-            Map.entry("twilioFromNumber",     nz(s.getTwilioFromNumber()))
+            Map.entry("twilioFromNumber",     nz(s.getTwilioFromNumber())),
+            // Per-event MSG91 Flow template ids (not secret — shown in full).
+            Map.entry("tplWelcome",         nz(s.getTplWelcome())),
+            Map.entry("tplOrderCod",        nz(s.getTplOrderCod())),
+            Map.entry("tplOrderOnline",     nz(s.getTplOrderOnline())),
+            Map.entry("tplOrderShipped",    nz(s.getTplOrderShipped())),
+            Map.entry("tplOrderDelivered",  nz(s.getTplOrderDelivered())),
+            Map.entry("tplOrderCancelled",  nz(s.getTplOrderCancelled())),
+            Map.entry("tplOrderProcessing", nz(s.getTplOrderProcessing())),
+            Map.entry("tplOrderRefunded",   nz(s.getTplOrderRefunded())),
+            Map.entry("tplPasswordChanged", nz(s.getTplPasswordChanged())),
+            Map.entry("tplRfqReceived",     nz(s.getTplRfqReceived())),
+            Map.entry("tplRfqReady",        nz(s.getTplRfqReady()))
         ));
     }
 
@@ -78,6 +90,10 @@ public class NotificationSettingsController {
         // blank in the form never wipes an already-saved credential.
         private String msg91AuthKey, msg91TemplateId;
         private String twilioAccountSid, twilioAuthToken, twilioFromNumber;
+        // Per-event MSG91 Flow template ids (not secret).
+        private String tplWelcome, tplOrderCod, tplOrderOnline, tplOrderShipped,
+                       tplOrderDelivered, tplOrderCancelled, tplOrderProcessing,
+                       tplOrderRefunded, tplPasswordChanged, tplRfqReceived, tplRfqReady;
     }
 
     @PutMapping
@@ -95,6 +111,18 @@ public class NotificationSettingsController {
         s.setSmsSenderId(req.getSmsSenderId());
         s.setMsg91TemplateId(req.getMsg91TemplateId());
         s.setTwilioFromNumber(req.getTwilioFromNumber());
+        // Per-event Flow template ids (plain values; blank clears).
+        s.setTplWelcome(req.getTplWelcome());
+        s.setTplOrderCod(req.getTplOrderCod());
+        s.setTplOrderOnline(req.getTplOrderOnline());
+        s.setTplOrderShipped(req.getTplOrderShipped());
+        s.setTplOrderDelivered(req.getTplOrderDelivered());
+        s.setTplOrderCancelled(req.getTplOrderCancelled());
+        s.setTplOrderProcessing(req.getTplOrderProcessing());
+        s.setTplOrderRefunded(req.getTplOrderRefunded());
+        s.setTplPasswordChanged(req.getTplPasswordChanged());
+        s.setTplRfqReceived(req.getTplRfqReceived());
+        s.setTplRfqReady(req.getTplRfqReady());
         // Only overwrite secrets when a fresh value is provided.
         if (req.getMsg91AuthKey() != null && !req.getMsg91AuthKey().isBlank())
             s.setMsg91AuthKey(req.getMsg91AuthKey().trim());

@@ -127,7 +127,9 @@ public class RfqController {
         emailService.sendRfqAcknowledgement(saved.getBuyerEmail(), saved.getBuyerName(),
                 saved.getRfqNumber(), saved.getItems().size());
         try {
-            smsService.send(saved.getBuyerPhone(),
+            var vars = new java.util.LinkedHashMap<String, String>();
+            vars.put("rfq_number", saved.getRfqNumber());
+            smsService.send(saved.getBuyerPhone(), com.navgrow.service.SmsEvent.RFQ_RECEIVED, vars,
                 "Navgrow received your quote request " + saved.getRfqNumber() +
                 ". We'll send a formal quote within 1 business day. Track at navgrow.org/saved-quotes");
         } catch (Exception ignored) { /* SMS best-effort */ }
@@ -273,7 +275,10 @@ public class RfqController {
                 saved.getRfqNumber(), total.toPlainString(),
                 saved.getQuoteValidUntil().toLocalDate().toString());
         try {
-            smsService.send(saved.getBuyerPhone(),
+            var vars = new java.util.LinkedHashMap<String, String>();
+            vars.put("rfq_number", saved.getRfqNumber());
+            vars.put("amount", total.toPlainString());
+            smsService.send(saved.getBuyerPhone(), com.navgrow.service.SmsEvent.RFQ_READY, vars,
                 "Your Navgrow quote " + saved.getRfqNumber() + " is ready. Total Rs " +
                 total.toPlainString() + ". View & accept at navgrow.org/saved-quotes");
         } catch (Exception ignored) { /* SMS best-effort */ }

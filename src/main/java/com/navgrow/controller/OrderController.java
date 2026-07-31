@@ -270,7 +270,10 @@ public class OrderController {
             // Alert the office inbox so fulfilment can start immediately.
             emailService.sendNewOrderAdminNotification(order);
             try {
-                smsService.send(order.getCustomerPhone(),
+                var vars = new java.util.LinkedHashMap<String, String>();
+                vars.put("order_number", order.getOrderNumber());
+                vars.put("amount", order.getGrandTotal().toPlainString());
+                smsService.send(order.getCustomerPhone(), com.navgrow.service.SmsEvent.ORDER_COD, vars,
                     "Your Navgrow order " + order.getOrderNumber() + " is confirmed (Cash on Delivery). Amount payable Rs "
                     + order.getGrandTotal().toPlainString());
             } catch (Exception e) {
@@ -390,7 +393,10 @@ public class OrderController {
 
             // Send confirmation SMS (best-effort; never blocks the response)
             try {
-                smsService.send(order.getCustomerPhone(),
+                var vars = new java.util.LinkedHashMap<String, String>();
+                vars.put("order_number", order.getOrderNumber());
+                vars.put("amount", order.getGrandTotal().toPlainString());
+                smsService.send(order.getCustomerPhone(), com.navgrow.service.SmsEvent.ORDER_ONLINE, vars,
                     "Your Navgrow order " + order.getOrderNumber() + " is confirmed. Total Rs " +
                     order.getGrandTotal().toPlainString() + ". Track it at navgrow.org. Thank you!");
             } catch (Exception ignored) { /* SMS must never break order confirmation */ }
@@ -533,7 +539,7 @@ public class OrderController {
         if (statusChanged) {
             emailService.sendOrderStatusUpdate(saved);
             try {
-                smsService.send(saved.getCustomerPhone(), buildStatusSms(saved));
+                sendStatusSms(saved);
             } catch (Exception e) {
                 log.warn("Status SMS failed for {}: {}", saved.getOrderNumber(), e.getMessage());
             }
@@ -541,7 +547,54 @@ public class OrderController {
         return ResponseEntity.ok(saved);
     }
 
-    /** Short SMS body for an order status change. */
+    /**
+     * Send the status-change SMS via the event-aware path (MSG91 Flow template per
+     * status when configured; plain text otherwise). SHIPPED with no tracking uses
+     * the no-tracking variant so the DLT template matches.
+     */
+    private void sendStatusSms(Order order) {
+        String num = order.getOrderNumber();
+        String phone = order.getCustomerPhone();
+        var vars = new java.util.LinkedHashMap<String, String>();
+        switch (order.getStatus()) {
+            case SHIPPED -> {
+                String tracking = order.getTrackingNumber();
+                boolean hasTracking = tracking != null && !tracking.isBlank();
+                vars.put("order_number", num);
+                vars.put("tracking", hasTracking ? tracking : "");
+                String text = "Your Navgrow order " + num + " has shipped"
+                    + (hasTracking ? " (Tracking: " + tracking + ")" : "")
+                    + ". Track at navgrow.org.";
+                smsService.send(phone, SmsEvent.ORDER_SHIPPED, vars, text);
+            }
+            case DELIVERED -> {
+                vars.put("order_number", num);
+                smsService.send(phone, SmsEvent.ORDER_DELIVERED, vars,
+                    "Your Navgrow order " + num + " has been delivered. Thank you for shopping with us!");
+            }
+            case CANCELLED -> {
+                vars.put("order_number", num);
+                smsService.send(phone, SmsEvent.ORDER_CANCELLED, vars,
+                    "Your Navgrow order " + num + " has been cancelled. Any online payment will be refunded.");
+            }
+            case PROCESSING -> {
+                vars.put("order_number", num);
+                smsService.send(phone, SmsEvent.ORDER_PROCESSING, vars,
+                    "Your Navgrow order " + num + " is being prepared for dispatch.");
+            }
+            case REFUNDED -> {
+                vars.put("order_number", num);
+                smsService.send(phone, SmsEvent.ORDER_REFUNDED, vars,
+                    "A refund has been issued for your Navgrow order " + num + ".");
+            }
+            default -> {
+                // No dedicated template for other statuses — plain text (best-effort).
+                smsService.send(phone, "Update on your Navgrow order " + num + ": " + order.getStatus() + ".");
+            }
+        }
+    }
+
+    /** Short SMS body for an order status change (kept for reference/reuse). */
     private String buildStatusSms(Order order) {
         String num = order.getOrderNumber();
         return switch (order.getStatus()) {
