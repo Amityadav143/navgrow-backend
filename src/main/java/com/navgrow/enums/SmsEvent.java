@@ -1,7 +1,7 @@
 /*
  * © 2024–2025 Navgrow Engineering Service Pvt. Ltd. All rights reserved.
  */
-package com.navgrow.service;
+package com.navgrow.enums;
 
 /**
  * The transactional SMS events the app sends. Each maps to a DLT-approved MSG91

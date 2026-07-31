@@ -5,6 +5,7 @@
 package com.navgrow.controller;
 
 import com.navgrow.entity.User;
+import com.navgrow.enums.SmsEvent;
 import com.navgrow.enums.UserRole;
 import com.navgrow.exception.BadRequestException;
 import com.navgrow.repository.UserRepository;
@@ -181,7 +182,7 @@ public class AuthController {
         }
         if (req.getPhone() != null && !req.getPhone().isBlank()) {
             try {
-                smsService.send(req.getPhone(), com.navgrow.service.SmsEvent.WELCOME,
+                smsService.send(req.getPhone(), SmsEvent.WELCOME,
                     new java.util.LinkedHashMap<>(),
                     "Welcome to Navgrow Engineering! Your account is ready. Shop industrial supplies at navgrow.org");
             } catch (Exception e) {
