@@ -8,7 +8,6 @@
 package com.navgrow.service;
 import com.navgrow.entity.PasswordResetToken;
 import com.navgrow.entity.User;
-import com.navgrow.enums.SmsEvent;
 import com.navgrow.exception.BadRequestException;
 import com.navgrow.exception.ResourceNotFoundException;
 import com.navgrow.repository.PasswordResetTokenRepository;
@@ -60,7 +59,7 @@ public class PasswordResetService {
         // Security notification SMS (best-effort) — alerts the user their password changed.
         if (user.getPhone() != null && !user.getPhone().isBlank()) {
             try {
-                smsService.send(user.getPhone(), SmsEvent.PASSWORD_CHANGED,
+                smsService.send(user.getPhone(), com.navgrow.enums.SmsEvent.PASSWORD_CHANGED,
                     new java.util.LinkedHashMap<>(),
                     "Your Navgrow account password was just changed. If this wasn't you, contact us immediately at +918927070972.");
             } catch (Exception ignored) { /* never block the reset */ }

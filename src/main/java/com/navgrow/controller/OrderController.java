@@ -3,62 +3,31 @@
  * CIN: U74999WB2022PTC256012 · navgrow.org
  */
 package com.navgrow.controller;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-
-import org.json.JSONObject;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
-
-import com.navgrow.entity.Coupon;
-import com.navgrow.entity.CouponRedemption;
-import com.navgrow.entity.Order;
-import com.navgrow.entity.OrderItem;
-import com.navgrow.entity.Product;
-import com.navgrow.entity.User;
-import com.navgrow.enums.OrderStatus;
-import com.navgrow.enums.PaymentStatus;
-import com.navgrow.enums.SmsEvent;
-import com.navgrow.exception.BadRequestException;
-import com.navgrow.exception.ResourceNotFoundException;
-import com.navgrow.repository.OrderRepository;
-import com.navgrow.repository.ProductRepository;
+import com.navgrow.entity.*;
+import com.navgrow.enums.*;
+import com.navgrow.exception.*;
+import com.navgrow.repository.*;
 import com.navgrow.service.EmailService;
 import com.navgrow.util.OrderNumberGenerator;
 import com.razorpay.RazorpayClient;
 import com.razorpay.RazorpayException;
-
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.NotNull;
-import lombok.Data;
-import lombok.RequiredArgsConstructor;
+import jakarta.validation.constraints.*;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
+import org.json.JSONObject;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.data.domain.*;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.*;
 
 @RestController
 @RequestMapping("/orders")
@@ -72,6 +41,7 @@ public class OrderController {
     private final EmailService emailService;
     private final com.navgrow.service.SmsService smsService;
     private final com.navgrow.service.InvoiceService invoiceService;
+    private final com.navgrow.service.InvoiceNumberService invoiceNumberService;
     private final com.navgrow.service.DeliveryService deliveryService;
     private final com.navgrow.repository.UserRepository userRepo;
     private final com.navgrow.repository.CouponRepository couponRepo;
@@ -288,6 +258,10 @@ public class OrderController {
         if (cod) {
             // COD orders are confirmed immediately, so the coupon is spent now.
             recordCouponRedemption(appliedCoupon, buyer, order);
+            // A tax invoice is issued at the point of sale — assign its number now
+            // so the customer's confirmation email and account both show it.
+            try { invoiceNumberService.assignIfAbsent(order); }
+            catch (Exception e) { log.warn("Invoice number assignment failed for {}: {}", order.getOrderNumber(), e.getMessage()); }
             for (OrderItem item : order.getItems()) {
                 Product product = item.getProduct();
                 if (product != null && product.getStockQty() != null) {
@@ -304,7 +278,7 @@ public class OrderController {
                 var vars = new java.util.LinkedHashMap<String, String>();
                 vars.put("order_number", order.getOrderNumber());
                 vars.put("amount", order.getGrandTotal().toPlainString());
-                smsService.send(order.getCustomerPhone(), SmsEvent.ORDER_COD, vars,
+                smsService.send(order.getCustomerPhone(), com.navgrow.enums.SmsEvent.ORDER_COD, vars,
                     "Your Navgrow order " + order.getOrderNumber() + " is confirmed (Cash on Delivery). Amount payable Rs "
                     + order.getGrandTotal().toPlainString());
             } catch (Exception e) {
@@ -395,6 +369,10 @@ public class OrderController {
             order.setStatus(OrderStatus.CONFIRMED);
             orderRepo.save(order);
 
+            // Payment has cleared — issue the GST tax invoice number now.
+            try { invoiceNumberService.assignIfAbsent(order); }
+            catch (Exception e) { log.warn("Invoice number assignment failed for {}: {}", order.getOrderNumber(), e.getMessage()); }
+
             // Spend the coupon only now that payment has actually cleared, so an
             // abandoned/unpaid online order never burns the customer's one use.
             if (order.getCouponCode() != null && order.getUser() != null) {
@@ -427,7 +405,7 @@ public class OrderController {
                 var vars = new java.util.LinkedHashMap<String, String>();
                 vars.put("order_number", order.getOrderNumber());
                 vars.put("amount", order.getGrandTotal().toPlainString());
-                smsService.send(order.getCustomerPhone(), SmsEvent.ORDER_ONLINE, vars,
+                smsService.send(order.getCustomerPhone(), com.navgrow.enums.SmsEvent.ORDER_ONLINE, vars,
                     "Your Navgrow order " + order.getOrderNumber() + " is confirmed. Total Rs " +
                     order.getGrandTotal().toPlainString() + ". Track it at navgrow.org. Thank you!");
             } catch (Exception ignored) { /* SMS must never break order confirmation */ }
@@ -495,13 +473,24 @@ public class OrderController {
                     + "<p>Need help? Write to info@navgrow.org or call +91 89270 70972.</p>"
                     + "</body></html>");
         }
-        // Only allow invoice once payment is captured
-        if (order.getPaymentStatus() == null
-                || order.getPaymentStatus() == com.navgrow.enums.PaymentStatus.PENDING) {
+        // An invoice is available once the sale is confirmed. For prepaid orders
+        // that means payment captured; for COD the order is confirmed at placement
+        // (a tax invoice is issued at point of sale). Only a still-unpaid *online*
+        // order — one that was never confirmed and has no invoice number — is blocked.
+        boolean hasInvoiceNumber = order.getInvoiceNumber() != null && !order.getInvoiceNumber().isBlank();
+        boolean paid = order.getPaymentStatus() == com.navgrow.enums.PaymentStatus.PAID;
+        boolean confirmed = order.getStatus() != null && order.getStatus() != com.navgrow.enums.OrderStatus.PENDING;
+        if (!hasInvoiceNumber && !paid && !confirmed) {
             return ResponseEntity.badRequest()
                 .body("<html><body style='font-family:sans-serif;padding:40px'>"
                     + "<h2>Invoice not available yet</h2>"
-                    + "<p>An invoice is generated once payment is confirmed.</p></body></html>");
+                    + "<p>An invoice is generated once your order is confirmed.</p></body></html>");
+        }
+        // Safety net: if for any reason the number wasn't assigned at confirmation
+        // (e.g. a legacy order created before this feature), assign it on first view.
+        if (!hasInvoiceNumber) {
+            try { invoiceNumberService.assignIfAbsent(order); }
+            catch (Exception e) { log.warn("Lazy invoice number assignment failed for {}: {}", orderNumber, e.getMessage()); }
         }
         String html = invoiceService.generateInvoiceHtml(order);
         return ResponseEntity.ok()

@@ -7,6 +7,7 @@
  */
 package com.navgrow.controller;
 import com.navgrow.entity.Coupon;
+import com.navgrow.enums.CouponType;
 import com.navgrow.exception.BadRequestException;
 import com.navgrow.exception.ResourceNotFoundException;
 import com.navgrow.repository.CouponRepository;
@@ -29,7 +30,7 @@ public class CouponController {
     @Data public static class CouponReq {
         @NotBlank String code;
         String description;
-        Coupon.CouponType couponType;
+        CouponType couponType;
         @NotNull @PositiveOrZero BigDecimal value;  // 0 is valid for FREE_SHIP coupons
         BigDecimal minOrderAmount;
         BigDecimal maxDiscount;
@@ -131,7 +132,7 @@ public class CouponController {
         Coupon c = Coupon.builder()
             .code(req.getCode().toUpperCase())
             .description(req.getDescription())
-            .couponType(req.getCouponType() != null ? req.getCouponType() : Coupon.CouponType.PERCENTAGE)
+            .couponType(req.getCouponType() != null ? req.getCouponType() : CouponType.PERCENTAGE)
             .value(req.getValue())
             .minOrderAmount(req.getMinOrderAmount() != null ? req.getMinOrderAmount() : BigDecimal.ZERO)
             .maxDiscount(req.getMaxDiscount())

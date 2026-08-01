@@ -39,6 +39,7 @@ public class Order {
     @Column(name = "company_name")   private String companyName;
     @Column(name = "gstin")          private String gstin;
     @Column(name = "invoice_number") private String invoiceNumber;
+    @Column(name = "invoice_date")   private java.time.LocalDateTime invoiceDate;
 
     @Column(name = "address_line1", nullable = false, columnDefinition = "TEXT") private String addressLine1;
     @Column(name = "address_line2", columnDefinition = "TEXT") private String addressLine2;

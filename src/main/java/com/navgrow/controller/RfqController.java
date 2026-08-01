@@ -8,7 +8,6 @@ package com.navgrow.controller;
 import com.navgrow.entity.Rfq;
 import com.navgrow.entity.RfqItem;
 import com.navgrow.enums.RfqStatus;
-import com.navgrow.enums.SmsEvent;
 import com.navgrow.exception.ResourceNotFoundException;
 import com.navgrow.repository.RfqRepository;
 import com.navgrow.service.EmailService;
@@ -130,7 +129,7 @@ public class RfqController {
         try {
             var vars = new java.util.LinkedHashMap<String, String>();
             vars.put("rfq_number", saved.getRfqNumber());
-            smsService.send(saved.getBuyerPhone(), SmsEvent.RFQ_RECEIVED, vars,
+            smsService.send(saved.getBuyerPhone(), com.navgrow.enums.SmsEvent.RFQ_RECEIVED, vars,
                 "Navgrow received your quote request " + saved.getRfqNumber() +
                 ". We'll send a formal quote within 1 business day. Track at navgrow.org/saved-quotes");
         } catch (Exception ignored) { /* SMS best-effort */ }
@@ -279,7 +278,7 @@ public class RfqController {
             var vars = new java.util.LinkedHashMap<String, String>();
             vars.put("rfq_number", saved.getRfqNumber());
             vars.put("amount", total.toPlainString());
-            smsService.send(saved.getBuyerPhone(), SmsEvent.RFQ_READY, vars,
+            smsService.send(saved.getBuyerPhone(), com.navgrow.enums.SmsEvent.RFQ_READY, vars,
                 "Your Navgrow quote " + saved.getRfqNumber() + " is ready. Total Rs " +
                 total.toPlainString() + ". View & accept at navgrow.org/saved-quotes");
         } catch (Exception ignored) { /* SMS best-effort */ }

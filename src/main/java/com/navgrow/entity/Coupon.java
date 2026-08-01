@@ -6,6 +6,7 @@
  * Unauthorised copying or distribution is strictly prohibited.
  */
 package com.navgrow.entity;
+import com.navgrow.enums.CouponType;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -62,8 +63,6 @@ public class Coupon {
     @Column(name = "created_at", updatable = false)
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
-
-    public enum CouponType { PERCENTAGE, FLAT }
 
     public boolean isValid() {
         if (!active) return false;

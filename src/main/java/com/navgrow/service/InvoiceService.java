@@ -25,7 +25,10 @@ import java.time.format.DateTimeFormatter;
  */
 @Service
 @Slf4j
+@lombok.RequiredArgsConstructor
 public class InvoiceService {
+
+    private final BrandAssets brandAssets;
 
     // ── Seller (Navgrow) constants ────────────────────────────────────────────
     private static final String SELLER_NAME   = "Navgrow Engineering Service Pvt. Ltd.";
@@ -100,36 +103,43 @@ public class InvoiceService {
             <title>Tax Invoice %s</title>
             <style>
               * { box-sizing: border-box; }
-              body { font-family: 'Segoe UI', Arial, sans-serif; color:#1f2937; margin:0; padding:32px; font-size:13px; }
-              .inv { max-width:820px; margin:auto; border:1px solid #e5e7eb; }
-              .hd { background:linear-gradient(135deg,#1e3a8a,#2563eb); color:#fff; padding:24px 28px; display:flex; justify-content:space-between; align-items:flex-start; }
-              .hd h1 { margin:0; font-size:22px; letter-spacing:.5px; }
-              .hd .tag { font-size:11px; opacity:.85; margin-top:4px; }
+              body { font-family: 'Segoe UI', Arial, sans-serif; color:#1f2937; margin:0; padding:32px; font-size:13px; background:#f4f6f9; }
+              .inv { max-width:820px; margin:auto; border:1px solid #e5e7eb; background:#fff; box-shadow:0 10px 40px rgba(19,41,75,.08); border-radius:10px; overflow:hidden; }
+              .hd { background:linear-gradient(135deg,#0C1D38,#13294B); color:#fff; padding:26px 30px; display:flex; justify-content:space-between; align-items:center; border-bottom:3px solid #D4A028; }
+              .hd .brand { display:flex; align-items:center; gap:16px; }
+              .hd img.logo { height:56px; width:auto; display:block; }
+              .hd h1 { margin:0; font-size:20px; letter-spacing:.4px; font-weight:800; }
+              .hd .tag { font-size:11px; opacity:.82; margin-top:3px; line-height:1.5; }
               .inv-title { text-align:right; }
-              .inv-title h2 { margin:0; font-size:20px; font-weight:800; }
-              .meta { display:flex; justify-content:space-between; padding:20px 28px; border-bottom:1px solid #eee; gap:24px; }
+              .inv-title h2 { margin:0; font-size:22px; font-weight:800; color:#D4A028; letter-spacing:1px; }
+              .meta { display:flex; justify-content:space-between; padding:20px 30px; border-bottom:1px solid #eee; gap:24px; }
               .meta .box { font-size:12.5px; line-height:1.6; }
-              .meta .box b { color:#1e3a8a; display:block; margin-bottom:4px; font-size:11px; text-transform:uppercase; letter-spacing:.5px; }
+              .meta .box b { color:#13294B; display:block; margin-bottom:4px; font-size:11px; text-transform:uppercase; letter-spacing:.5px; }
               table { width:100%%; border-collapse:collapse; }
-              thead th { background:#f1f5f9; color:#334155; font-size:11px; text-transform:uppercase; letter-spacing:.4px; padding:10px 8px; border-bottom:2px solid #cbd5e1; }
+              thead th { background:#13294B; color:#fff; font-size:11px; text-transform:uppercase; letter-spacing:.4px; padding:11px 8px; }
               tbody td { padding:9px 8px; border-bottom:1px solid #eee; text-align:center; }
               tbody td.l { text-align:left; }
-              .totals { padding:18px 28px; display:flex; justify-content:flex-end; }
-              .totals table { width:320px; }
+              tbody tr:nth-child(even) { background:#f7f9fc; }
+              .totals { padding:18px 30px; display:flex; justify-content:flex-end; }
+              .totals table { width:340px; }
               .totals td { padding:6px 4px; font-size:13px; }
-              .totals .grand td { font-size:17px; font-weight:800; color:#1e3a8a; border-top:2px solid #1e3a8a; padding-top:10px; }
-              .ft { padding:20px 28px; border-top:1px solid #eee; font-size:11px; color:#6b7280; }
-              .badge { display:inline-block; background:#dcfce7; color:#15803d; padding:3px 10px; border-radius:99px; font-size:11px; font-weight:700; }
+              .totals .grand td { font-size:17px; font-weight:800; color:#13294B; border-top:2px solid #D4A028; padding-top:10px; }
+              .ft { padding:20px 30px; border-top:1px solid #eee; font-size:11px; color:#6b7280; background:#fafbfd; }
+              .badge { display:inline-block; background:#fdf3dc; color:#8a6410; padding:3px 10px; border-radius:99px; font-size:11px; font-weight:700; border:1px solid #eeddb0; }
               .pay { color:%s; font-weight:700; }
-              @media print { body { padding:0; } .inv { border:none; } .noprint { display:none; } }
+              .btn { background:linear-gradient(135deg,#13294B,#1E3A5F); }
+              @media print { body { padding:0; background:#fff; } .inv { border:none; box-shadow:none; border-radius:0; } .noprint { display:none; } }
             </style></head><body>
             <div class="inv">
               <div class="hd">
-                <div>
-                  <h1>%s</h1>
-                  <div class="tag">CIN: %s · GSTIN: %s</div>
-                  <div class="tag">%s</div>
-                  <div class="tag">%s · %s</div>
+                <div class="brand">
+                  %s
+                  <div>
+                    <h1>%s</h1>
+                    <div class="tag">CIN: %s · GSTIN: %s</div>
+                    <div class="tag">%s</div>
+                    <div class="tag">%s · %s</div>
+                  </div>
                 </div>
                 <div class="inv-title">
                   <h2>TAX INVOICE</h2>
@@ -182,7 +192,7 @@ public class InvoiceService {
               </div>
             </div>
             <div class="noprint" style="text-align:center;margin:24px">
-              <button onclick="window.print()" style="background:#2563eb;color:#fff;border:none;padding:12px 28px;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer">
+              <button onclick="window.print()" style="background:linear-gradient(135deg,#13294B,#1E3A5F);color:#fff;border:none;padding:12px 28px;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer">
                 Download / Print Invoice
               </button>
             </div>
@@ -190,6 +200,9 @@ public class InvoiceService {
             """.formatted(
                 esc(invoiceNo),
                 "DELIVERED".equals(String.valueOf(o.getStatus())) ? "#15803d" : "#b45309",
+                brandAssets.hasLogo()
+                    ? "<img class=\"logo\" src=\"" + brandAssets.logoDataUri() + "\" alt=\"Navgrow\"/>"
+                    : "",
                 SELLER_NAME, SELLER_CIN, SELLER_GSTIN, SELLER_ADDR, SELLER_EMAIL, SELLER_PHONE,
                 esc(invoiceNo),
                 esc(o.getCustomerName()),
@@ -199,7 +212,8 @@ public class InvoiceService {
                 esc(o.getCustomerPhone()),
                 o.getGstin() != null ? "<br/>GSTIN: <strong>" + esc(o.getGstin()) + "</strong>" : "",
                 esc(invoiceNo), esc(o.getOrderNumber()),
-                o.getCreatedAt() != null ? o.getCreatedAt().format(DATE) : "",
+                (o.getInvoiceDate() != null ? o.getInvoiceDate() : o.getCreatedAt()) != null
+                    ? (o.getInvoiceDate() != null ? o.getInvoiceDate() : o.getCreatedAt()).format(DATE) : "",
                 String.valueOf(o.getPaymentStatus()), esc(o.getState()),
                 taxHeaders, rows.toString(),
                 money(totalTaxable), money(totalTax),
