@@ -66,6 +66,7 @@ public final class NavBotKnowledge {
         FOLLOW_UPS.put("returns", List.of("What is the warranty?", "How do I contact support?", "Track my order"));
         FOLLOW_UPS.put("greeting", List.of("What services do you offer?", "Show me products", "How do I get a quote?"));
         FOLLOW_UPS.put("why_navgrow", List.of("What are your certifications?", "Which industries do you serve?", "Get a quote"));
+        FOLLOW_UPS.put("international", List.of("What products do you offer?", "How do I request a quote?", "Talk to the team"));
         FOLLOW_UPS.put("process_timeline", List.of("How do I get a quote?", "Do you offer AMC?", "Contact the team"));
     }
 
@@ -97,7 +98,10 @@ public final class NavBotKnowledge {
             "• **Contact** details and company info\n\n" +
             "What can I help you with today?",
             kw("hi", 3, "hello", 3, "hey", 3, "good morning", 3, "good afternoon", 3,
-               "namaste", 3, "who are you", 3, "what can you do", 3, "help", 1, "start", 1));
+               "namaste", 3, "namaskar", 3, "who are you", 3, "what can you do", 3, "help", 1, "start", 1,
+               // Hindi / Bengali greetings (native + romanized)
+               "नमस्ते", 3, "नमस्कार", 3, "हैलो", 3, "নমস্কার", 3, "হ্যালো", 3,
+               "kaise ho", 3, "kemon achen", 3, "assalamualaikum", 3, "hola", 2, "bonjour", 2));
 
         // ── Services overview ─────────────────────────────────────────────────
         add("services",
@@ -114,7 +118,9 @@ public final class NavBotKnowledge {
             "🌿 **Green Building** — efficient, certified, low-impact builds\n\n" +
             "See details: **navgrow.org/services** — or tell me your requirement for a quote.",
             kw("service", 3, "services", 3, "what do you do", 3, "what do you offer", 3,
-               "capabilities", 2, "offerings", 2, "solutions", 1));
+               "capabilities", 2, "offerings", 2, "solutions", 1,
+               "सेवा", 3, "सेवाएं", 3, "क्या करते हो", 3, "সেবা", 3, "কি করেন", 3,
+               "seva", 3, "servicio", 3, "services offerts", 2));
 
         // ── Sustainability focus ──────────────────────────────────────────────
         add("sustainability",
@@ -154,7 +160,8 @@ public final class NavBotKnowledge {
             "Every order includes a **GST invoice with HSN codes**. Browse: **navgrow.org/shop**",
             kw("product", 3, "products", 3, "shop", 3, "buy", 3, "purchase", 3, "catalogue", 3,
                "catalog", 3, "helmet", 2, "gloves", 2, "boots", 2, "wrench", 2, "ppe", 3,
-               "safety equipment", 3, "tools", 2, "vest", 2, "coverall", 2, "respirator", 2));
+               "safety equipment", 3, "tools", 2, "vest", 2, "coverall", 2, "respirator", 2,
+               "उत्पाद", 3, "खरीद", 3, "सामान", 2, "পণ্য", 3, "কিনতে", 3, "kharid", 3, "producto", 3));
 
         // ── Pricing / quotes ──────────────────────────────────────────────────
         add("quote",
@@ -275,7 +282,8 @@ public final class NavBotKnowledge {
             "⏰ **Hours:** Mon–Fri, 9 AM – 6 PM IST\n\n" +
             "💬 Fastest response on WhatsApp: **wa.me/918927070972**",
             kw("contact", 3, "phone", 3, "email", 3, "address", 3, "office", 3, "location", 3,
-               "reach", 2, "call", 2, "whatsapp", 3, "number", 2, "where are you", 3));
+               "reach", 2, "call", 2, "whatsapp", 3, "number", 2, "where are you", 3,
+               "संपर्क", 3, "फोन", 3, "पता", 2, "যোগাযোগ", 3, "ফোন", 3, "sampark", 3, "contacto", 3, "contacter", 3));
 
         // ── Thanks / closing ──────────────────────────────────────────────────
         add("thanks",
@@ -389,6 +397,21 @@ public final class NavBotKnowledge {
             "Tell me your location and I'll confirm what we can do there.",
             kw("area", 2, "where do you operate", 4, "service area", 5, "do you cover", 4,
                "pan india", 3, "north east", 3, "siliguri", 3, "location", 2, "cover my city", 4));
+
+        // ── International / global client enquiry ──────────────────────────────
+        add("international",
+            "Thanks for your interest from outside India! 🌍\n\n" +
+            "Navgrow is based in **Siliguri, India** and works primarily across India, " +
+            "with a gateway location to Nepal, Bhutan and Bangladesh. For **international " +
+            "or cross-border requirements**, we handle enquiries case-by-case:\n\n" +
+            "• Tell us your **country** and **requirement** (products or a project)\n" +
+            "• We'll advise on **feasibility, shipping and duties** and share a tailored quote\n\n" +
+            "📧 **info@navgrow.org** · 📱 **WhatsApp +91 89270 70972** — please include your " +
+            "country and time zone and we'll respond within one business day.",
+            kw("international", 4, "export", 4, "overseas", 4, "abroad", 4, "outside india", 5,
+               "ship to", 3, "deliver to", 3, "worldwide", 4, "global", 3, "another country", 4,
+               "from usa", 4, "from uk", 4, "from dubai", 4, "from nepal", 4, "from bangladesh", 4,
+               "import", 3, "customs", 3, "duty", 2, "foreign", 3));
 
         // ── Human handoff ─────────────────────────────────────────────────────
         add("human",
