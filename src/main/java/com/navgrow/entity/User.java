@@ -44,6 +44,15 @@ public class User {
     @Builder.Default
     private UserRole role = UserRole.USER;
 
+    /**
+     * Custom per-user admin permissions, stored as a comma-separated list of
+     * {@link com.navgrow.enums.Permission} names (e.g. "ORDERS,PRODUCTS,NEWS").
+     * Null/empty means "no custom grants" — access then follows the base role.
+     * A SUPER_ADMIN assigns these to give a user access to specific admin areas.
+     */
+    @Column(name = "permissions", columnDefinition = "TEXT")
+    private String permissions;
+
     @Column(name = "is_active")
     @Builder.Default
     private boolean active = true;
@@ -80,6 +89,32 @@ public class User {
     @Column(name = "updated_at")
     @Builder.Default
     private LocalDateTime updatedAt = LocalDateTime.now();
+
+    /**
+     * The effective set of admin permissions for this user, exposed to the client
+     * as a JSON array. SUPER_ADMIN and ADMIN implicitly have ALL permissions;
+     * MANAGER/EDITOR/USER get only what was explicitly granted via {@link #permissions}.
+     * Unknown/legacy tokens are ignored so the app never breaks on bad data.
+     */
+    @Transient
+    @JsonProperty("effectivePermissions")
+    public java.util.Set<String> getEffectivePermissions() {
+        if (role == com.navgrow.enums.UserRole.SUPER_ADMIN || role == com.navgrow.enums.UserRole.ADMIN) {
+            java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+            for (com.navgrow.enums.Permission p : com.navgrow.enums.Permission.values()) out.add(p.name());
+            return out;
+        }
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        if (permissions != null && !permissions.isBlank()) {
+            for (String tok : permissions.split(",")) {
+                String t = tok.trim().toUpperCase();
+                if (t.isEmpty()) continue;
+                try { out.add(com.navgrow.enums.Permission.valueOf(t).name()); }
+                catch (IllegalArgumentException ignored) { /* skip unknown */ }
+            }
+        }
+        return out;
+    }
 
     @PrePersist
     protected void onCreate() {

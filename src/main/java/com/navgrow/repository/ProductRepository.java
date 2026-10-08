@@ -34,4 +34,7 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     List<String> findAllCategories();
 
     boolean existsBySlug(String slug);
+
+    // Lightweight list for the dynamic sitemap (all active products).
+    java.util.List<Product> findByActiveTrue();
 }

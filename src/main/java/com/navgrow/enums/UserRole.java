@@ -8,6 +8,9 @@
 package com.navgrow.enums;
 
 public enum UserRole {
+    /** Highest tier: full access to everything, including granting other users
+     *  custom access (permissions). There should be very few of these. */
+    SUPER_ADMIN,
     ADMIN,
     MANAGER,
     EDITOR,

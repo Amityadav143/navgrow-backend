@@ -24,6 +24,9 @@ public interface NewsArticleRepository extends JpaRepository<NewsArticle, UUID> 
     Page<NewsArticle> findByCategoryAndStatusOrderByPublishedAtDesc(String category, NewsStatus status, Pageable pageable);
     long countByStatus(NewsStatus status);
 
+    // Lightweight list for the dynamic sitemap (all published posts).
+    java.util.List<NewsArticle> findByStatus(NewsStatus status);
+
     // Text search across title OR excerpt for a given status
     Page<NewsArticle> findByStatusAndTitleContainingIgnoreCaseOrStatusAndExcerptContainingIgnoreCase(
         com.navgrow.enums.NewsStatus s1, String title,

@@ -96,7 +96,7 @@ public class UserController {
 
     // ── Admin: list all users ────────────────────────────────────────────────
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     public ResponseEntity<Page<User>> list(
             @RequestParam(defaultValue="0") int page,
             @RequestParam(defaultValue="20") int size,
@@ -111,54 +111,113 @@ public class UserController {
 
     // ── Admin: get user by id ────────────────────────────────────────────────
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
     public ResponseEntity<User> getById(@PathVariable UUID id) {
         return ResponseEntity.ok(repo.findById(id)
             .orElseThrow(() -> new ResourceNotFoundException("User not found")));
     }
 
-    // ── Admin: update role ───────────────────────────────────────────────────
+    // ── The catalog of grantable permissions (for the Super Admin UI) ────────
+    @GetMapping("/permissions-catalog")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
+    public ResponseEntity<java.util.List<String>> permissionsCatalog() {
+        java.util.List<String> perms = new java.util.ArrayList<>();
+        for (com.navgrow.enums.Permission p : com.navgrow.enums.Permission.values()) perms.add(p.name());
+        return ResponseEntity.ok(perms);
+    }
+
+    // ── Update role ──────────────────────────────────────────────────────────
+    // Only a SUPER_ADMIN may create/assign the SUPER_ADMIN or ADMIN tier (prevents
+    // privilege escalation by a regular ADMIN). ADMINs may still set lower roles.
     @PatchMapping("/{id}/role")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<User> updateRole(@PathVariable UUID id, @RequestParam UserRole role) {
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
+    public ResponseEntity<User> updateRole(@PathVariable UUID id, @RequestParam UserRole role,
+                                           @AuthenticationPrincipal UserDetails actor) {
+        boolean actorIsSuper = isSuperAdmin(actor);
+        if ((role == UserRole.SUPER_ADMIN || role == UserRole.ADMIN) && !actorIsSuper)
+            throw new BadRequestException("Only a Super Admin can assign the Admin or Super Admin role.");
         User user = repo.findById(id).orElseThrow();
+        // Guard: a non-super actor may not modify a SUPER_ADMIN/ADMIN account.
+        if (!actorIsSuper && (user.getRole() == UserRole.SUPER_ADMIN || user.getRole() == UserRole.ADMIN))
+            throw new BadRequestException("Only a Super Admin can modify an Admin account.");
         user.setRole(role);
+        return ResponseEntity.ok(repo.save(user));
+    }
+
+    // ── Grant custom permissions (SUPER_ADMIN only) ──────────────────────────
+    // Body: {"permissions": ["ORDERS","NEWS", ...]}. Unknown names are rejected.
+    public static class PermissionsUpdate { public java.util.List<String> permissions; }
+
+    @PutMapping("/{id}/permissions")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    public ResponseEntity<User> updatePermissions(@PathVariable UUID id,
+                                                  @RequestBody PermissionsUpdate req) {
+        User user = repo.findById(id).orElseThrow();
+        java.util.LinkedHashSet<String> clean = new java.util.LinkedHashSet<>();
+        if (req != null && req.permissions != null) {
+            for (String raw : req.permissions) {
+                if (raw == null) continue;
+                String t = raw.trim().toUpperCase();
+                if (t.isEmpty()) continue;
+                try { clean.add(com.navgrow.enums.Permission.valueOf(t).name()); }
+                catch (IllegalArgumentException ex) { throw new BadRequestException("Unknown permission: " + raw); }
+            }
+        }
+        user.setPermissions(clean.isEmpty() ? null : String.join(",", clean));
         return ResponseEntity.ok(repo.save(user));
     }
 
     // ── Admin: toggle active ─────────────────────────────────────────────────
     @PatchMapping("/{id}/toggle-active")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<User> toggleActive(@PathVariable UUID id) {
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
+    public ResponseEntity<User> toggleActive(@PathVariable UUID id,
+                                             @AuthenticationPrincipal UserDetails actor) {
         User user = repo.findById(id).orElseThrow();
+        if (!isSuperAdmin(actor) && (user.getRole() == UserRole.SUPER_ADMIN || user.getRole() == UserRole.ADMIN))
+            throw new BadRequestException("Only a Super Admin can modify an Admin account.");
         user.setActive(!user.isActive());
         return ResponseEntity.ok(repo.save(user));
     }
 
     // ── Admin: delete user ───────────────────────────────────────────────────
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
+    public ResponseEntity<Void> delete(@PathVariable UUID id,
+                                       @AuthenticationPrincipal UserDetails actor) {
+        User user = repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        // A SUPER_ADMIN account can only be deleted by another SUPER_ADMIN.
+        if (user.getRole() == UserRole.SUPER_ADMIN && !isSuperAdmin(actor))
+            throw new BadRequestException("Only a Super Admin can delete a Super Admin account.");
         repo.deleteById(id);
         return ResponseEntity.noContent().build();
     }
 
     // ── Admin: create user ───────────────────────────────────────────────────
     @PostMapping("/admin/create")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<User> adminCreate(@Valid @RequestBody AdminCreateUser req) {
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
+    public ResponseEntity<User> adminCreate(@Valid @RequestBody AdminCreateUser req,
+                                            @AuthenticationPrincipal UserDetails actor) {
         if (repo.findByEmail(req.getEmail()).isPresent())
             throw new BadRequestException("Email already registered.");
+        UserRole newRole = req.getRole() != null ? req.getRole() : UserRole.USER;
+        if ((newRole == UserRole.SUPER_ADMIN || newRole == UserRole.ADMIN) && !isSuperAdmin(actor))
+            throw new BadRequestException("Only a Super Admin can create an Admin or Super Admin.");
         User user = User.builder()
             .fullName(req.getFullName())
             .email(req.getEmail())
             .phone(req.getPhone())
             .passwordHash(encoder.encode(req.getPassword()))
             .company(req.getCompany())
-            .role(req.getRole() != null ? req.getRole() : UserRole.USER)
+            .role(newRole)
             .active(true)
             .build();
         return ResponseEntity.ok(repo.save(user));
+    }
+
+    /** True if the authenticated actor holds the SUPER_ADMIN role. */
+    private boolean isSuperAdmin(UserDetails actor) {
+        return actor != null && actor.getAuthorities().stream()
+            .anyMatch(a -> "ROLE_SUPER_ADMIN".equals(a.getAuthority()));
     }
 
     // ── Address endpoints (stub — store as JSON in user profile for now) ────

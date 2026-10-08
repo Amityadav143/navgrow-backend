@@ -76,15 +76,20 @@ public class AuthController {
             userRepo.save(u);
         });
 
-        return Map.of(
-            "accessToken",  token,
-            "refreshToken", refresh,
-            "tokenType",    "Bearer",
-            "email",        ud.getUsername(),
-            "fullName",     fullName,
-            "avatarUrl",    avatarUrl != null ? avatarUrl : "",
-            "roles",        ud.getAuthorities()
-        );
+        Map<String, Object> resp = new java.util.LinkedHashMap<>();
+        resp.put("accessToken",  token);
+        resp.put("refreshToken", refresh);
+        resp.put("tokenType",    "Bearer");
+        resp.put("email",        ud.getUsername());
+        resp.put("fullName",     fullName);
+        resp.put("avatarUrl",    avatarUrl != null ? avatarUrl : "");
+        resp.put("roles",        ud.getAuthorities());
+        // Explicit base role + the effective custom permissions, so the client can
+        // show exactly the admin areas this user is allowed into.
+        resp.put("role", userOpt.map(u -> u.getRole().name()).orElse("USER"));
+        resp.put("permissions", userOpt.map(User::getEffectivePermissions)
+            .orElse(java.util.Collections.emptySet()));
+        return resp;
     }
 
     // ── Email login ──────────────────────────────────────────────────────────

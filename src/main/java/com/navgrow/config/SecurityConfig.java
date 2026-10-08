@@ -54,7 +54,8 @@ public class SecurityConfig {
     };
 
     private static final String[] PUBLIC_GET_EXTRA = {
-        "/chat/starters", "/site-settings", "/catalogue/download", "/delivery/check"
+        "/chat/starters", "/site-settings", "/catalogue/download", "/delivery/check",
+        "/sitemap.xml", "/sitemap-content.xml"
     };
 
     private static final String[] PUBLIC_ANY = {
@@ -84,23 +85,46 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, PUBLIC_GET_EXTRA).permitAll()
                 .requestMatchers(HttpMethod.POST, PUBLIC_POST).permitAll()
                 .requestMatchers(PUBLIC_ANY).permitAll()
-                // EDITOR can manage content + site settings
-                .requestMatchers(HttpMethod.POST,   "/news/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
-                .requestMatchers(HttpMethod.PUT,    "/news/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
-                .requestMatchers(HttpMethod.DELETE, "/news/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
-                .requestMatchers(HttpMethod.POST,   "/projects/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
-                .requestMatchers(HttpMethod.PUT,    "/projects/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
-                .requestMatchers(HttpMethod.POST,   "/gallery/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
-                .requestMatchers(HttpMethod.PUT,    "/gallery/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
-                .requestMatchers(HttpMethod.POST,   "/files/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
-                .requestMatchers(HttpMethod.POST,   "/catalog/**").hasAnyRole("ADMIN","MANAGER")
-                .requestMatchers(HttpMethod.PUT,    "/catalog/**").hasAnyRole("ADMIN","MANAGER")
-                .requestMatchers(HttpMethod.DELETE, "/catalog/**").hasAnyRole("ADMIN","MANAGER")
-                .requestMatchers(HttpMethod.PUT,    "/site-settings/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
-                .requestMatchers(HttpMethod.POST,   "/site-settings/**").hasAnyRole("ADMIN","MANAGER","EDITOR")
-                // Only ADMIN manages orders, coupons, users
-                .requestMatchers("/admin/**").hasAnyRole("ADMIN","MANAGER")
-                .requestMatchers("/coupons/**").hasAnyRole("ADMIN","MANAGER")
+                // Access is granted by base ROLE *or* a specific custom PERM_*
+                // permission a SUPER_ADMIN granted. SUPER_ADMIN & ADMIN receive
+                // every PERM_* automatically, so they retain full access; the
+                // role names are kept for backward compatibility.
+                // Content (news / projects / gallery / files)
+                .requestMatchers(HttpMethod.POST,   "/news/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_NEWS")
+                .requestMatchers(HttpMethod.PUT,    "/news/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_NEWS")
+                .requestMatchers(HttpMethod.DELETE, "/news/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_NEWS")
+                .requestMatchers(HttpMethod.POST,   "/projects/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_PROJECTS")
+                .requestMatchers(HttpMethod.PUT,    "/projects/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_PROJECTS")
+                .requestMatchers(HttpMethod.DELETE, "/projects/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_PROJECTS")
+                .requestMatchers(HttpMethod.POST,   "/gallery/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_GALLERY")
+                .requestMatchers(HttpMethod.PUT,    "/gallery/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_GALLERY")
+                .requestMatchers(HttpMethod.DELETE, "/gallery/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_GALLERY")
+                .requestMatchers(HttpMethod.POST,   "/files/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_NEWS","PERM_PRODUCTS","PERM_PROJECTS","PERM_GALLERY")
+                // Jobs / tenders content
+                .requestMatchers(HttpMethod.POST,   "/jobs/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_JOBS")
+                .requestMatchers(HttpMethod.PUT,    "/jobs/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_JOBS")
+                .requestMatchers(HttpMethod.DELETE, "/jobs/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_JOBS")
+                .requestMatchers(HttpMethod.POST,   "/tenders/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_TENDERS")
+                .requestMatchers(HttpMethod.PUT,    "/tenders/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_TENDERS")
+                .requestMatchers(HttpMethod.DELETE, "/tenders/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_TENDERS")
+                // Catalog taxonomy
+                .requestMatchers(HttpMethod.POST,   "/catalog/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","PERM_CATALOG")
+                .requestMatchers(HttpMethod.PUT,    "/catalog/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","PERM_CATALOG")
+                .requestMatchers(HttpMethod.DELETE, "/catalog/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","PERM_CATALOG")
+                // Site settings
+                .requestMatchers(HttpMethod.PUT,    "/site-settings/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_SETTINGS")
+                .requestMatchers(HttpMethod.POST,   "/site-settings/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_SETTINGS")
+                // Products
+                .requestMatchers(HttpMethod.POST,   "/products/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","PERM_PRODUCTS")
+                .requestMatchers(HttpMethod.PUT,    "/products/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","PERM_PRODUCTS")
+                .requestMatchers(HttpMethod.DELETE, "/products/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","PERM_PRODUCTS")
+                // Coupons
+                .requestMatchers("/coupons/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","PERM_COUPONS")
+                // Admin surface (dashboard, orders, quotes, rfqs, messages, etc.)
+                // stays role-gated for broad access; per-area PERM_* checks live
+                // on the individual controllers (@PreAuthorize) where finer control
+                // is needed, so a permissioned user reaches exactly their sections.
+                .requestMatchers("/admin/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","PERM_ORDERS","PERM_QUOTES","PERM_RFQS","PERM_MESSAGES","PERM_USERS","PERM_CATALOGUE_LEADS","PERM_NOTIFICATIONS","PERM_AUDIT","PERM_TAX_RULES","PERM_DELIVERY_ZONES")
                 .anyRequest().authenticated()
             )
             .userDetailsService(userDetailsService);
