@@ -38,7 +38,7 @@ public class ProjectController {
         return ResponseEntity.ok(repo.findBySlug(slug).orElseThrow(() -> new ResourceNotFoundException("Project", slug)));
     }
 
-    @PostMapping @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_PROJECTS')")
     public ResponseEntity<Project> create(@Valid @RequestBody ProjectReq req) {
         String slug = slugUtil.uniqueSlug(req.getTitle(), s -> repo.findBySlug(s).isPresent());
         String cat = (req.getCategory() == null || req.getCategory().isBlank()) ? "General" : req.getCategory();
@@ -49,7 +49,7 @@ public class ProjectController {
         return ResponseEntity.status(201).body(repo.save(p));
     }
 
-    @PutMapping("/{id}") @PreAuthorize("hasRole('ADMIN')")
+    @PutMapping("/{id}") @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_PROJECTS')")
     public ResponseEntity<Project> update(@PathVariable UUID id, @Valid @RequestBody ProjectReq req) {
         Project p = repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Project", id.toString()));
         p.setTitle(req.getTitle()); p.setCategory((req.getCategory()==null||req.getCategory().isBlank())?"General":req.getCategory());
@@ -59,6 +59,6 @@ public class ProjectController {
         return ResponseEntity.ok(repo.save(p));
     }
 
-    @DeleteMapping("/{id}") @PreAuthorize("hasRole('ADMIN')")
+    @DeleteMapping("/{id}") @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_PROJECTS')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) { repo.deleteById(id); return ResponseEntity.noContent().build(); }
 }

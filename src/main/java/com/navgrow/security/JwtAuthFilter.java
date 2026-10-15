@@ -39,15 +39,21 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             if (token != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 String email = jwtUtil.extractEmail(token);
                 UserDetails userDetails = userDetailsService.loadUserByUsername(email);
-                if (jwtUtil.isTokenValid(token, userDetails)) {
+                // A refresh token must never work as a (long-lived) access token,
+                // and a deactivated account loses API access immediately.
+                boolean isRefreshToken = JwtUtil.TYPE_REFRESH.equals(jwtUtil.extractType(token));
+                if (!isRefreshToken && userDetails.isEnabled() && jwtUtil.isTokenValid(token, userDetails)) {
                     var authToken = new UsernamePasswordAuthenticationToken(
                             userDetails, null, userDetails.getAuthorities());
                     authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authToken);
                 }
             }
+        } catch (io.jsonwebtoken.ExpiredJwtException e) {
+            // Normal: the client refreshes on the 401 this request now gets.
+            log.debug("Expired access token: {}", e.getMessage());
         } catch (Exception e) {
-            log.error("Cannot set user authentication: {}", e.getMessage());
+            log.warn("Cannot set user authentication: {}", e.getMessage());
         }
         filterChain.doFilter(request, response);
     }

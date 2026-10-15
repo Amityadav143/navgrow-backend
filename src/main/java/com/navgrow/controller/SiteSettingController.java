@@ -41,7 +41,7 @@ public class SiteSettingController {
     }
 
     @PutMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_SETTINGS')")
     @CacheEvict(value = CacheConfig.SITE_SETTINGS, allEntries = true)
     public ResponseEntity<Map<String, String>> save(@RequestBody Map<String, Object> body) {
         // body is expected to contain {"settings": "<json string>"} or the raw object

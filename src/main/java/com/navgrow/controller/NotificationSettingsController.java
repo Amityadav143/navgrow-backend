@@ -26,7 +26,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/admin/notification-settings")
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_NOTIFICATIONS')")
 @RequiredArgsConstructor
 @Slf4j
 public class NotificationSettingsController {

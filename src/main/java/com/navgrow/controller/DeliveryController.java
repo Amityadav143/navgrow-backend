@@ -53,9 +53,16 @@ public class DeliveryController {
     public ResponseEntity<DeliveryService.DeliveryQuote> check(
             @RequestParam String pincode,
             @RequestParam(required = false) BigDecimal orderValue,
-            @RequestParam(required = false, defaultValue = "1") Integer qty) {
+            @RequestParam(required = false, defaultValue = "1") Integer qty,
+            // Optional comma-separated product ids/slugs (product page or cart).
+            // Any that are limited to other pincodes come back in restrictedItems.
+            @RequestParam(required = false) String products) {
         int totalQty = (qty == null || qty < 1) ? 1 : qty;
-        return ResponseEntity.ok(delivery.quote(pincode, orderValue, totalQty));
+        DeliveryService.DeliveryQuote quote = delivery.quote(pincode, orderValue, totalQty);
+        if (products != null && !products.isBlank()) {
+            quote.setRestrictedItems(delivery.restrictedItems(pincode, products));
+        }
+        return ResponseEntity.ok(quote);
     }
 
     // ─────────────────────────── Admin ───────────────────────────
@@ -80,13 +87,13 @@ public class DeliveryController {
     }
 
     @GetMapping("/zones")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER') or hasRole('EDITOR')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasRole('EDITOR') or hasAuthority('PERM_DELIVERY_ZONES') or hasAuthority('PERM_PRODUCTS')")
     public ResponseEntity<List<DeliveryZone>> zones() {
         return ResponseEntity.ok(delivery.allZones());
     }
 
     @PostMapping("/zones")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_DELIVERY_ZONES')")
     public ResponseEntity<DeliveryZone> create(@Valid @RequestBody ZoneReq req) {
         DeliveryZone z = new DeliveryZone();
         apply(req, z);
@@ -96,7 +103,7 @@ public class DeliveryController {
     }
 
     @PutMapping("/zones/{id}")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_DELIVERY_ZONES')")
     public ResponseEntity<DeliveryZone> update(@PathVariable UUID id, @Valid @RequestBody ZoneReq req) {
         DeliveryZone z = zoneRepo.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("DeliveryZone", id.toString()));
@@ -107,7 +114,7 @@ public class DeliveryController {
     }
 
     @DeleteMapping("/zones/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_DELIVERY_ZONES')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         if (!zoneRepo.existsById(id)) throw new ResourceNotFoundException("DeliveryZone", id.toString());
         zoneRepo.deleteById(id);
@@ -117,7 +124,7 @@ public class DeliveryController {
 
     /** Lets an admin confirm how a pincode resolves before saving a rule. */
     @GetMapping("/zones/test")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER') or hasRole('EDITOR')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasRole('EDITOR') or hasAuthority('PERM_DELIVERY_ZONES') or hasAuthority('PERM_PRODUCTS')")
     public ResponseEntity<DeliveryService.DeliveryQuote> test(
             @RequestParam String pincode,
             @RequestParam(required = false) BigDecimal orderValue) {

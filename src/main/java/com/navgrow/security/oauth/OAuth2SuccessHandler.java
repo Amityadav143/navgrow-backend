@@ -54,12 +54,18 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
 
         if (email == null || email.isBlank()) {
             getRedirectStrategy().sendRedirect(request, response,
-                frontendUrl + "/?auth_error=no_email");
+                frontendUrl + "/oauth/callback?auth_error=no_email");
             return;
         }
 
         // Find or provision the user (no password — OAuth-only account).
-        User user = userRepo.findByEmail(email).orElseGet(() -> {
+        // Case-insensitive so a password account "Name@Company.com" and the same
+        // Google login (always lower-case) are ONE account — previously a second,
+        // customer-only account was created, so staff signing in with Google saw
+        // "normal access".
+        User user = userRepo.findByEmail(email)
+            .or(() -> userRepo.findFirstByEmailIgnoreCaseOrderByCreatedAtAsc(email))
+            .orElseGet(() -> {
             User u = User.builder()
                 .fullName(name == null ? "" : name)
                 .email(email)
@@ -71,6 +77,12 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
             log.info("Provisioned new user via OAuth2: {}", email);
             return userRepo.save(u);
         });
+
+        if (!user.isActive()) {
+            getRedirectStrategy().sendRedirect(request, response,
+                frontendUrl + "/oauth/callback?auth_error=deactivated");
+            return;
+        }
 
         // Keep avatar fresh
         if (picture != null && !picture.isBlank() && !picture.equals(user.getAvatarUrl())) {

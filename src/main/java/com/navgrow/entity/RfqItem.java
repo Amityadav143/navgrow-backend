@@ -51,4 +51,17 @@ public class RfqItem {
 
     @Column(name = "gst_rate")
     private Integer gstRate;
+
+    /**
+     * True when the product was OUT OF STOCK at the moment the buyer asked for a
+     * quote, so the team has to source it and quote a lead time (backorder).
+     * Decided on the server from live stock — never trusted from the client.
+     */
+    @Builder.Default
+    @Column(name = "backorder")
+    private boolean backorder = false;
+
+    /** Units in stock when the RFQ was raised (null for custom / non-catalogue lines). */
+    @Column(name = "stock_at_request")
+    private Integer stockAtRequest;
 }

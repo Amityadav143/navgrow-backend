@@ -62,7 +62,7 @@ public class JobController {
     @GetMapping public ResponseEntity<List<JobListing>> listOpen() { return ResponseEntity.ok(jobRepo.findByStatusOrderByCreatedAtDesc(JobStatus.OPEN)); }
 
     /** Admin listing — returns jobs in every status so closed/paused roles stay manageable. */
-    @GetMapping("/manage") @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @GetMapping("/manage") @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_JOBS')")
     public ResponseEntity<List<JobListing>> listAll() {
         return ResponseEntity.ok(jobRepo.findAll(org.springframework.data.domain.Sort.by("createdAt").descending()));
     }
@@ -71,7 +71,7 @@ public class JobController {
         return ResponseEntity.ok(jobRepo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Job", id.toString())));
     }
 
-    @PostMapping @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_JOBS')")
     public ResponseEntity<JobListing> create(@Valid @RequestBody JobReq req) {
         JobListing j = JobListing.builder().title(req.getTitle()).department(req.getDepartment())
             .jobType(req.getJobType() != null ? req.getJobType() : "Full-time")
@@ -86,7 +86,7 @@ public class JobController {
         return ResponseEntity.status(201).body(saved);
     }
 
-    @PutMapping("/{id}") @PreAuthorize("hasRole('ADMIN')")
+    @PutMapping("/{id}") @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_JOBS')")
     public ResponseEntity<JobListing> update(@PathVariable UUID id, @Valid @RequestBody JobReq req) {
         JobListing j = jobRepo.findById(id)
             .orElseThrow(() -> new ResourceNotFoundException("Job", id.toString()));
@@ -106,7 +106,7 @@ public class JobController {
         return ResponseEntity.ok(saved);
     }
 
-    @PatchMapping("/{id}/toggle") @PreAuthorize("hasRole('ADMIN')")
+    @PatchMapping("/{id}/toggle") @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_JOBS')")
     public ResponseEntity<JobListing> toggle(@PathVariable UUID id) {
         JobListing j = jobRepo.findById(id)
             .orElseThrow(() -> new ResourceNotFoundException("Job", id.toString()));
@@ -117,7 +117,7 @@ public class JobController {
         return ResponseEntity.ok(saved);
     }
 
-    @DeleteMapping("/{id}") @PreAuthorize("hasRole('ADMIN')")
+    @DeleteMapping("/{id}") @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_JOBS')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         jobRepo.deleteById(id);
         audit.log("JOB_DELETE", "JobListing", id.toString(), null);
@@ -187,13 +187,13 @@ public class JobController {
         return ResponseEntity.ok(Map.of("url", url, "fileName", stored, "originalName", original, "size", bytes.length));
     }
 
-    @GetMapping("/{jobId}/applications") @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @GetMapping("/{jobId}/applications") @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_JOBS')")
     public ResponseEntity<Page<JobApplication>> getApplications(@PathVariable UUID jobId,
             @RequestParam(defaultValue="0") int page, @RequestParam(defaultValue="20") int size) {
         return ResponseEntity.ok(appRepo.findByJobIdOrderByCreatedAtDesc(jobId, PageRequest.of(page, size)));
     }
 
-    @PatchMapping("/applications/{id}/status") @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PatchMapping("/applications/{id}/status") @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_JOBS')")
     public ResponseEntity<JobApplication> updateAppStatus(@PathVariable UUID id, @RequestParam ApplicationStatus status) {
         JobApplication app = appRepo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Application", id.toString()));
         app.setStatus(status);

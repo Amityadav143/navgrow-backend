@@ -64,8 +64,50 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException ex) {
+        // Method-security denials surface here before Spring Security's entry point
+        // sees them. For a caller with no valid login (e.g. an expired access token)
+        // answer 401 so the client refreshes its token instead of showing "no access".
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        boolean anonymous = auth == null || !auth.isAuthenticated()
+            || auth instanceof org.springframework.security.authentication.AnonymousAuthenticationToken;
+        if (anonymous) {
+            log.debug("401 Authentication required: {}", ex.getMessage());
+            return buildError(HttpStatus.UNAUTHORIZED, "Please sign in to continue.");
+        }
         log.warn("403 Access denied: {}", ex.getMessage());
-        return buildError(HttpStatus.FORBIDDEN, "Access denied");
+        return buildError(HttpStatus.FORBIDDEN, "You don't have access to this section. Ask a Super Admin to grant it.");
+    }
+
+    // Client mistakes that used to fall through to the generic 500 handler and
+    // show up as "Server error (ref …)" in the admin.
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<Map<String, Object>> handleTypeMismatch(
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex) {
+        log.warn("400 Bad parameter '{}': {}", ex.getName(), ex.getValue());
+        return buildError(HttpStatus.BAD_REQUEST, "Invalid value for '" + ex.getName() + "'.");
+    }
+
+    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException.class)
+    public ResponseEntity<Map<String, Object>> handleMissingParam(
+            org.springframework.web.bind.MissingServletRequestParameterException ex) {
+        log.warn("400 Missing parameter: {}", ex.getParameterName());
+        return buildError(HttpStatus.BAD_REQUEST, "Missing required parameter '" + ex.getParameterName() + "'.");
+    }
+
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<Map<String, Object>> handleMethodNotAllowed(
+            org.springframework.web.HttpRequestMethodNotSupportedException ex) {
+        return buildError(HttpStatus.METHOD_NOT_ALLOWED, ex.getMessage());
+    }
+
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleConflict(org.springframework.dao.DataIntegrityViolationException ex) {
+        String detail = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : "";
+        log.warn("409 Data conflict: {}", detail);
+        String msg = detail != null && detail.toLowerCase().contains("duplicate")
+            ? "That value is already in use (it must be unique). Please change it and try again."
+            : "This change conflicts with existing data. Please check the values and try again.";
+        return buildError(HttpStatus.CONFLICT, msg);
     }
 
     @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)

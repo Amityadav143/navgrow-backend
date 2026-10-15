@@ -125,6 +125,10 @@ app:
   base-url: ${BASE_URL:http://localhost:8080}
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
   upload-dir: ${UPLOAD_DIR:./uploads}
+  # Comma-separated emails of EXISTING accounts to promote to SUPER_ADMIN on
+  # startup (register the account first). If no Super Admin exists at all, the
+  # oldest active ADMIN is promoted automatically — see SuperAdminBootstrap.
+  super-admin-emails: ${SUPER_ADMIN_EMAILS:}
   allowed-origins:
     - ${FRONTEND_URL:http://localhost:5173}
     - https://navgrow.org

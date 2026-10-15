@@ -49,7 +49,7 @@ public class ContactController {
     }
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_MESSAGES')")
     public ResponseEntity<Page<ContactMessage>> getAll(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
@@ -62,7 +62,7 @@ public class ContactController {
     }
 
     @PatchMapping("/{id}/read")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_MESSAGES')")
     public ResponseEntity<ContactMessage> markRead(@PathVariable UUID id) {
         ContactMessage msg = repo.findById(id)
             .orElseThrow(() -> new ResourceNotFoundException("ContactMessage", id.toString()));
@@ -71,7 +71,7 @@ public class ContactController {
     }
 
     @GetMapping("/unread-count")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_MESSAGES')")
     public ResponseEntity<Map<String, Long>> unreadCount() {
         return ResponseEntity.ok(Map.of("count", repo.countUnread()));
     }
@@ -82,7 +82,7 @@ public class ContactController {
     }
 
     @PostMapping("/{id}/reply")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_MESSAGES')")
     public ResponseEntity<Map<String, String>> reply(
             @PathVariable UUID id,
             @Valid @RequestBody ReplyRequest req) {

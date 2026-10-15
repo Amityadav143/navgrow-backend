@@ -22,7 +22,10 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
     @Override
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
+        // Exact match first (fast, unique index), then case-insensitive so an
+        // account registered as "Name@Company.com" can sign in as name@company.com.
         var user = userRepository.findByEmail(email)
+                .or(() -> email == null ? java.util.Optional.<com.navgrow.entity.User>empty() : userRepository.findFirstByEmailIgnoreCaseOrderByCreatedAtAsc(email.trim()))
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + email));
 
         List<GrantedAuthority> authorities = new ArrayList<>();

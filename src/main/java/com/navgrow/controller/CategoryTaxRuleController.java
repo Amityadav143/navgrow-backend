@@ -67,13 +67,13 @@ public class CategoryTaxRuleController {
 
     /** Readable by any signed-in staff member; the shop itself does not need it. */
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER') or hasRole('EDITOR')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasRole('EDITOR') or hasAuthority('PERM_TAX_RULES') or hasAuthority('PERM_PRODUCTS')")
     public ResponseEntity<List<CategoryTaxRule>> list() {
         return ResponseEntity.ok(repo.findAllByOrderByCategoryAsc());
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_TAX_RULES')")
     public ResponseEntity<CategoryTaxRule> create(@Valid @RequestBody RuleReq req) {
         String category = req.getCategory().trim();
         if (repo.existsByCategoryIgnoreCase(category))
@@ -93,7 +93,7 @@ public class CategoryTaxRuleController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_TAX_RULES')")
     public ResponseEntity<CategoryTaxRule> update(@PathVariable UUID id, @Valid @RequestBody RuleReq req) {
         CategoryTaxRule rule = repo.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("CategoryTaxRule", id.toString()));
@@ -109,7 +109,7 @@ public class CategoryTaxRuleController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_TAX_RULES')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         if (!repo.existsById(id)) throw new ResourceNotFoundException("CategoryTaxRule", id.toString());
         repo.deleteById(id);
@@ -125,7 +125,7 @@ public class CategoryTaxRuleController {
      * the rule, which is what you want after a slab change.
      */
     @PostMapping("/{id}/apply")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_TAX_RULES')")
     @Transactional
     public ResponseEntity<Map<String, Object>> applyToProducts(
             @PathVariable UUID id,

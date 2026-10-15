@@ -61,7 +61,7 @@ public class AnalyticsEventController {
 
     // ── Admin: funnel summary ─────────────────────────────────────────────────
     @GetMapping("/admin/analytics/funnel")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyRole('ADMIN','MANAGER') or hasAuthority('PERM_ORDERS')")
     public ResponseEntity<Map<String, Object>> funnel(
             @RequestParam(defaultValue = "30") int days) {
         LocalDateTime since = LocalDateTime.now().minusDays(Math.max(1, Math.min(days, 365)));

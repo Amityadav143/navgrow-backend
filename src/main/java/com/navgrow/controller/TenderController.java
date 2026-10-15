@@ -56,7 +56,7 @@ public class TenderController {
     @GetMapping("/featured") @Cacheable(value = CacheConfig.TENDERS_PUBLIC, key = "'featured'") public ResponseEntity<List<Tender>> featured() { return ResponseEntity.ok(repo.findByFeaturedTrueAndStatusOrderByDeadlineAsc(TenderStatus.OPEN)); }
 
     /** Admin listing — every status, newest first, so closed/awarded tenders stay manageable. */
-    @GetMapping("/manage") @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @GetMapping("/manage") @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_TENDERS')")
     public ResponseEntity<List<Tender>> listAll() {
         return ResponseEntity.ok(repo.findAll(Sort.by("createdAt").descending()));
     }
@@ -69,7 +69,7 @@ public class TenderController {
         return ref;
     }
 
-    @PostMapping @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_TENDERS')")
     @CacheEvict(value = CacheConfig.TENDERS_PUBLIC, allEntries = true)
     public ResponseEntity<Tender> create(@Valid @RequestBody TenderReq req) {
         String ref = (req.getRefNumber() == null || req.getRefNumber().isBlank())
@@ -89,7 +89,7 @@ public class TenderController {
         return ResponseEntity.status(201).body(saved);
     }
 
-    @PutMapping("/{id}") @PreAuthorize("hasRole('ADMIN')")
+    @PutMapping("/{id}") @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_TENDERS')")
     @CacheEvict(value = CacheConfig.TENDERS_PUBLIC, allEntries = true)
     public ResponseEntity<Tender> update(@PathVariable UUID id, @Valid @RequestBody TenderReq req) {
         Tender t = repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Tender", id.toString()));
@@ -107,7 +107,7 @@ public class TenderController {
         return ResponseEntity.ok(saved);
     }
 
-    @DeleteMapping("/{id}") @PreAuthorize("hasRole('ADMIN')")
+    @DeleteMapping("/{id}") @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_TENDERS')")
     @CacheEvict(value = CacheConfig.TENDERS_PUBLIC, allEntries = true)
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         repo.deleteById(id);

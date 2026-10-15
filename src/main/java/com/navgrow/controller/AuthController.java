@@ -17,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.*;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
@@ -65,9 +66,10 @@ public class AuthController {
         String token   = jwtUtil.generateToken(ud);
         String refresh = jwtUtil.generateRefreshToken(ud);
 
-        // Fetch full user info for response
-        Optional<User> userOpt = userRepo.findByEmail(emailOrPhone)
-            .or(() -> userRepo.findByPhone(emailOrPhone));
+        // Fetch full user info for response (ud.getUsername() is the stored email).
+        Optional<User> userOpt = userRepo.findByEmail(ud.getUsername())
+            .or(() -> userRepo.findByEmail(emailOrPhone))
+            .or(() -> findByPhoneLoose(emailOrPhone));
         String fullName = userOpt.map(User::getFullName).orElse("");
         String avatarUrl = userOpt.map(User::getAvatarUrl).orElse("");
 
@@ -95,25 +97,58 @@ public class AuthController {
     // ── Email login ──────────────────────────────────────────────────────────
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest req) {
+        String email = req.getEmail().trim();
         try {
             authManager.authenticate(
-                new UsernamePasswordAuthenticationToken(req.getEmail(), req.getPassword()));
-        } catch (BadCredentialsException e) {
+                new UsernamePasswordAuthenticationToken(email, req.getPassword()));
+        } catch (DisabledException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(Map.of("message", DEACTIVATED_MSG));
+        } catch (AuthenticationException e) {
+            // Bad credentials, unknown user, locked… — one generic message (no account enumeration).
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(Map.of("message", "Invalid email or password"));
         }
-        UserDetails ud = uds.loadUserByUsername(req.getEmail());
-        return ResponseEntity.ok(buildTokenResponse(req.getEmail(), ud));
+        UserDetails ud = uds.loadUserByUsername(email);
+        return ResponseEntity.ok(buildTokenResponse(email, ud));
+    }
+
+    private static final String DEACTIVATED_MSG =
+        "This account has been deactivated. Please contact info@navgrow.org or +91 89270 70972.";
+
+    /**
+     * Normalises an Indian mobile number to its 10 digits ("+91 98765-43210" →
+     * "9876543210"). Returns the trimmed input unchanged if it isn't one.
+     */
+    static String normalizePhone(String raw) {
+        if (raw == null) return null;
+        String digits = raw.replaceAll("[^0-9]", "");
+        if (digits.length() == 12 && digits.startsWith("91")) digits = digits.substring(2);
+        if (digits.length() == 11 && digits.startsWith("0"))  digits = digits.substring(1);
+        return digits.matches("^[6-9]\\d{9}$") ? digits : raw.trim();
+    }
+
+    /** Finds a user by phone however it was stored (10 digits, +91…, with spaces). */
+    private Optional<User> findByPhoneLoose(String raw) {
+        if (raw == null || raw.isBlank()) return Optional.empty();
+        String n = normalizePhone(raw);
+        return userRepo.findByPhone(n)
+            .or(() -> userRepo.findByPhone(raw.trim()))
+            .or(() -> userRepo.findByPhone("+91" + n))
+            .or(() -> userRepo.findByPhone("91" + n))
+            .or(() -> userRepo.findByPhone("+91 " + n));
     }
 
     // ── Phone login — FIX: now properly implemented ─────────────────────────
     @PostMapping("/login-with-phone")
     public ResponseEntity<?> loginWithPhone(@Valid @RequestBody PhoneLoginRequest req) {
-        User user = userRepo.findByPhone(req.getPhone())
-            .orElse(null);
+        User user = findByPhoneLoose(req.getPhone()).orElse(null);
         if (user == null || !encoder.matches(req.getPassword(), user.getPasswordHash())) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(Map.of("message", "Invalid phone number or password"));
+        }
+        if (!user.isActive()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", DEACTIVATED_MSG));
         }
         UserDetails ud = uds.loadUserByUsername(user.getEmail());
         return ResponseEntity.ok(buildTokenResponse(req.getPhone(), ud));
@@ -128,7 +163,7 @@ public class AuthController {
         }
         // Only issue an OTP for a registered phone (avoids enumeration of unknowns via behaviour change:
         // we still return 200 so the response doesn't reveal whether the number exists).
-        if (userRepo.findByPhone(p).isPresent()) {
+        if (findByPhoneLoose(p).isPresent()) {
             otpService.issue(p);
         }
         return ResponseEntity.ok(Map.of("message", "If the number is registered, an OTP has been sent."));
@@ -143,23 +178,36 @@ public class AuthController {
     @PostMapping("/verify-otp")
     public ResponseEntity<?> verifyOtp(@RequestBody OtpVerifyRequest req) {
         String p = req.getPhone() == null ? "" : req.getPhone().replaceAll("\\s", "").trim();
-        User user = userRepo.findByPhone(p).orElse(null);
+        User user = findByPhoneLoose(p).orElse(null);
         if (user == null || !otpService.verify(p, req.getOtp() == null ? "" : req.getOtp().trim())) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(Map.of("message", "Invalid or expired OTP. Please try again."));
+        }
+        if (!user.isActive()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", DEACTIVATED_MSG));
         }
         UserDetails ud = uds.loadUserByUsername(user.getEmail());
         return ResponseEntity.ok(buildTokenResponse(p, ud));
     }
     @PostMapping("/register")
     public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest req) {
+        // Normalise first: blank → absent, emails lower-cased (no "A@x.com" vs
+        // "a@x.com" duplicates), phones reduced to their 10 digits.
+        if (req.getEmail() != null) req.setEmail(req.getEmail().isBlank() ? null : req.getEmail().trim().toLowerCase());
+        if (req.getPhone() != null) req.setPhone(req.getPhone().isBlank() ? null : normalizePhone(req.getPhone()));
         if (req.getEmail() == null && req.getPhone() == null) {
             throw new BadRequestException("Email or phone number is required.");
         }
-        if (req.getEmail() != null && userRepo.existsByEmail(req.getEmail())) {
+        if (req.getEmail() != null && !req.getEmail().matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$")) {
+            throw new BadRequestException("Please enter a valid email address.");
+        }
+        if (req.getPhone() != null && !req.getPhone().matches("^[6-9]\\d{9}$")) {
+            throw new BadRequestException("Please enter a valid 10-digit mobile number.");
+        }
+        if (req.getEmail() != null && userRepo.existsByEmailIgnoreCase(req.getEmail())) {
             throw new BadRequestException("Email already registered.");
         }
-        if (req.getPhone() != null && userRepo.findByPhone(req.getPhone()).isPresent()) {
+        if (req.getPhone() != null && findByPhoneLoose(req.getPhone()).isPresent()) {
             throw new BadRequestException("Phone number already registered.");
         }
 
@@ -202,9 +250,17 @@ public class AuthController {
     public ResponseEntity<?> refresh(@RequestParam String refreshToken) {
         try {
             String email = jwtUtil.extractEmail(refreshToken);
+            // Only refresh tokens may mint access tokens (legacy untyped tokens are
+            // accepted until they expire), and never for a deactivated account.
+            if (com.navgrow.security.JwtUtil.TYPE_ACCESS.equals(jwtUtil.extractType(refreshToken))) {
+                throw new BadRequestException("Invalid or expired refresh token.");
+            }
             UserDetails ud = uds.loadUserByUsername(email);
+            if (!ud.isEnabled()) throw new BadRequestException("This account has been deactivated.");
             String newToken = jwtUtil.generateToken(ud);
             return ResponseEntity.ok(Map.of("accessToken", newToken, "tokenType", "Bearer"));
+        } catch (BadRequestException e) {
+            throw e;
         } catch (Exception e) {
             log.warn("Refresh token invalid: {}", e.getMessage());
             throw new BadRequestException("Invalid or expired refresh token.");

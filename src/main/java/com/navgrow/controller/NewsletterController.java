@@ -36,7 +36,7 @@ public class NewsletterController {
     }
 
     @GetMapping("/count")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_MESSAGES')")
     public ResponseEntity<Map<String,Long>> count() {
         return ResponseEntity.ok(Map.of("activeSubscribers", repo.countByActiveTrue(), "total", repo.count()));
     }

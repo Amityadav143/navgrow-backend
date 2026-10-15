@@ -19,7 +19,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/admin/analytics")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+@PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyRole('ADMIN', 'MANAGER') or hasAuthority('PERM_ORDERS')")
 public class AnalyticsController {
     private final OrderRepository          orderRepo;
     private final ContactMessageRepository contactRepo;

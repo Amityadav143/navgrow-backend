@@ -134,7 +134,7 @@ public class CatalogueController {
     // ─────────────────────────── Admin ───────────────────────────
 
     @GetMapping("/leads")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_CATALOGUE_LEADS')")
     public ResponseEntity<Page<CatalogueLead>> list(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
@@ -149,7 +149,7 @@ public class CatalogueController {
     }
 
     @GetMapping("/leads/stats")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_CATALOGUE_LEADS')")
     public ResponseEntity<Map<String, Long>> stats() {
         return ResponseEntity.ok(Map.of(
                 "total", repo.count(),
@@ -160,7 +160,7 @@ public class CatalogueController {
     }
 
     @PatchMapping("/leads/{id}/status")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_CATALOGUE_LEADS')")
     public ResponseEntity<CatalogueLead> updateStatus(@PathVariable UUID id,
                                                       @RequestParam LeadStatus status,
                                                       @RequestParam(required = false) String assignedTo,
@@ -174,7 +174,7 @@ public class CatalogueController {
     }
 
     @DeleteMapping("/leads/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_CATALOGUE_LEADS')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         if (!repo.existsById(id)) throw new ResourceNotFoundException("CatalogueLead", id.toString());
         repo.deleteById(id);

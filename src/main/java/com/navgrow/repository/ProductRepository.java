@@ -17,7 +17,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface ProductRepository extends JpaRepository<Product, UUID> {
+public interface ProductRepository extends JpaRepository<Product, UUID>,
+        org.springframework.data.jpa.repository.JpaSpecificationExecutor<Product> {
     Optional<Product> findBySlug(String slug);
     Optional<Product> findBySku(String sku);
     Page<Product> findByActiveTrue(Pageable pageable);

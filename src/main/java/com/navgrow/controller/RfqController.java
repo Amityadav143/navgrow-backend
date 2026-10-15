@@ -50,6 +50,8 @@ public class RfqController {
     private final RfqRepository repo;
     private final EmailService emailService;
     private final com.navgrow.service.SmsService smsService;
+    private final com.navgrow.repository.ProductRepository productRepo;
+    private final com.navgrow.repository.UserRepository userRepo;
 
 
 
@@ -112,20 +114,39 @@ public class RfqController {
             .status(RfqStatus.SUBMITTED)
             .build();
 
+        // Link the RFQ to the signed-in buyer, so it appears under "My quotes" even
+        // when they used a different (e.g. company) email on the form.
+        if (ud != null) {
+            userRepo.findFirstByEmailIgnoreCaseOrderByCreatedAtAsc(ud.getUsername()).ifPresent(u -> rfq.setUserId(u.getId()));
+        }
+
+        int backorders = 0;
         for (RfqItemReq it : req.getItems()) {
+            UUID productId = parseUuidOrNull(it.getProductId());
+            // Out-of-stock (or more than we hold) → backorder. Decided from LIVE
+            // stock so the team sees exactly which lines need sourcing.
+            Integer stock = null;
+            if (productId != null) {
+                stock = productRepo.findById(productId).map(p -> p.getStockQty() == null ? 0 : p.getStockQty()).orElse(null);
+            }
+            boolean backorder = stock != null && (stock <= 0 || it.getQuantity() > stock);
+            if (backorder) backorders++;
             rfq.addItem(RfqItem.builder()
-                .productId(parseUuidOrNull(it.getProductId()))
+                .productId(productId)
                 .productName(it.getProductName())
                 .sku(it.getSku())
                 .quantity(it.getQuantity())
                 .specification(it.getSpecification())
                 .gstRate(it.getGstRate() != null ? it.getGstRate() : 18)
+                .backorder(backorder)
+                .stockAtRequest(stock)
                 .build());
         }
 
         Rfq saved = repo.save(rfq);
         emailService.sendRfqAcknowledgement(saved.getBuyerEmail(), saved.getBuyerName(),
-                saved.getRfqNumber(), saved.getItems().size());
+                saved.getRfqNumber(), saved.getItems().size(), backorders);
+        emailService.sendRfqAdminNotification(saved);
         try {
             var vars = new java.util.LinkedHashMap<String, String>();
             vars.put("rfq_number", saved.getRfqNumber());
@@ -143,10 +164,52 @@ public class RfqController {
 
     // ── Track by number (public) ──────────────────────────────────────────────
     @GetMapping("/track/{number}")
-    public ResponseEntity<Rfq> track(@PathVariable String number) {
-        Rfq rfq = repo.findByRfqNumber(number)
+    public ResponseEntity<Map<String, Object>> track(@PathVariable String number) {
+        String n = number == null ? "" : number.trim().toUpperCase();
+        Rfq rfq = repo.findByRfqNumber(n)
             .orElseThrow(() -> new ResourceNotFoundException("RFQ", number));
-        return ResponseEntity.ok(rfq);
+        return ResponseEntity.ok(publicView(rfq));
+    }
+
+    /**
+     * What anyone holding an RFQ number may see: status, prices and line items.
+     * The buyer's email, phone, GSTIN and notes are deliberately left out — this
+     * endpoint is public, and RFQ numbers are not secrets.
+     */
+    private Map<String, Object> publicView(Rfq r) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", r.getId());
+        m.put("rfqNumber", r.getRfqNumber());
+        m.put("status", r.getStatus());
+        String name = r.getBuyerName() == null ? "" : r.getBuyerName().trim();
+        m.put("buyerName", name.contains(" ") ? name.substring(0, name.indexOf(' ')) : name);
+        m.put("company", r.getCompany());
+        m.put("deliveryCity", r.getDeliveryCity());
+        m.put("quotedSubtotal", r.getQuotedSubtotal());
+        m.put("quotedGst", r.getQuotedGst());
+        m.put("quotedShipping", r.getQuotedShipping());
+        m.put("quotedTotal", r.getQuotedTotal());
+        m.put("quoteValidUntil", r.getQuoteValidUntil());
+        m.put("adminMessage", r.getAdminMessage());
+        m.put("paymentTerms", r.getPaymentTerms());
+        m.put("createdAt", r.getCreatedAt());
+        m.put("quotedAt", r.getQuotedAt());
+        List<Map<String, Object>> lines = new ArrayList<>();
+        for (RfqItem it : r.getItems() == null ? List.<RfqItem>of() : r.getItems()) {
+            Map<String, Object> l = new LinkedHashMap<>();
+            l.put("id", it.getId());
+            l.put("productName", it.getProductName());
+            l.put("sku", it.getSku());
+            l.put("quantity", it.getQuantity());
+            l.put("specification", it.getSpecification());
+            l.put("gstRate", it.getGstRate());
+            l.put("quotedUnitPrice", it.getQuotedUnitPrice());
+            l.put("lineTotal", it.getLineTotal());
+            l.put("backorder", it.isBackorder());
+            lines.add(l);
+        }
+        m.put("items", lines);
+        return m;
     }
 
     // ── My RFQs (buyer) ───────────────────────────────────────────────────────
@@ -155,8 +218,11 @@ public class RfqController {
     public ResponseEntity<Page<Rfq>> mine(@AuthenticationPrincipal UserDetails ud,
                                           @RequestParam(defaultValue = "0") int page,
                                           @RequestParam(defaultValue = "20") int size) {
-        Pageable p = PageRequest.of(page, size);
-        return ResponseEntity.ok(repo.findByBuyerEmailOrderByCreatedAtDesc(ud.getUsername(), p));
+        Pageable p = PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 100));
+        var me = userRepo.findFirstByEmailIgnoreCaseOrderByCreatedAtAsc(ud.getUsername());
+        return ResponseEntity.ok(me.isPresent()
+            ? repo.findByUserIdOrBuyerEmailIgnoreCaseOrderByCreatedAtDesc(me.get().getId(), ud.getUsername(), p)
+            : repo.findByBuyerEmailOrderByCreatedAtDesc(ud.getUsername(), p));
     }
 
     // ── Accept / reject quote (buyer) ─────────────────────────────────────────
@@ -208,7 +274,7 @@ public class RfqController {
 
     // ── Admin: list ───────────────────────────────────────────────────────────
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_RFQS')")
     public ResponseEntity<Page<Rfq>> list(@RequestParam(defaultValue = "0") int page,
                                           @RequestParam(defaultValue = "20") int size,
                                           @RequestParam(required = false) RfqStatus status) {
@@ -221,14 +287,14 @@ public class RfqController {
 
     // ── Admin: detail ─────────────────────────────────────────────────────────
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_RFQS')")
     public ResponseEntity<Rfq> detail(@PathVariable UUID id) {
         return ResponseEntity.ok(getOr404(id));
     }
 
     // ── Admin: price + send quote ─────────────────────────────────────────────
     @PutMapping("/{id}/quote")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_RFQS')")
     public ResponseEntity<Rfq> quote(@PathVariable UUID id, @Valid @RequestBody QuoteReq req) {
         Rfq rfq = getOr404(id);
 
@@ -288,7 +354,7 @@ public class RfqController {
 
     // ── Admin: update status ──────────────────────────────────────────────────
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_RFQS')")
     public ResponseEntity<Rfq> updateStatus(@PathVariable UUID id, @RequestBody Map<String, String> body) {
         Rfq rfq = getOr404(id);
         if (body.get("status") != null)

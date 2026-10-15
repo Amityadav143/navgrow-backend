@@ -19,8 +19,16 @@ import java.util.UUID;
 @Repository
 public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByEmail(String email);
+    Optional<User> findByEmailIgnoreCase(String email);
+    // Case-insensitive helpers that can never throw on legacy "A@x.com"/"a@x.com" pairs.
+    Optional<User> findFirstByEmailIgnoreCaseOrderByCreatedAtAsc(String email);
+    boolean existsByEmailIgnoreCase(String email);
     Optional<User> findByPhone(String phone);
     boolean existsByEmail(String email);
+
+    // Super-admin bootstrap (role bound as a parameter — safe with Postgres enums).
+    long countByRole(com.navgrow.enums.UserRole role);
+    Optional<User> findFirstByRoleAndActiveTrueOrderByCreatedAtAsc(com.navgrow.enums.UserRole role);
     Page<User> findByFullNameContainingIgnoreCaseOrEmailContainingIgnoreCase(
         String name, String email, Pageable pageable);
 }

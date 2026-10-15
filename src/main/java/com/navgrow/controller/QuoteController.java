@@ -75,7 +75,7 @@ public class QuoteController {
     }
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_QUOTES')")
     public ResponseEntity<Page<QuoteRequest>> list(
             @RequestParam(defaultValue="0") int page,
             @RequestParam(defaultValue="20") int size,
@@ -85,7 +85,7 @@ public class QuoteController {
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_QUOTES')")
     public ResponseEntity<QuoteRequest> updateStatus(@PathVariable UUID id, @RequestParam QuoteStatus status, @RequestParam(required=false) BigDecimal quotedAmount) {
         QuoteRequest q = repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("QuoteRequest", id.toString()));
         q.setStatus(status);

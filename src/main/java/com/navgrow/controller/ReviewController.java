@@ -57,7 +57,7 @@ public class ReviewController {
     }
 
     @PatchMapping("/admin/reviews/{id}/approve")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_PRODUCTS')")
     public ResponseEntity<ProductReview> approve(@PathVariable UUID id) {
         ProductReview r = reviewRepo.findById(id)
             .orElseThrow(() -> new ResourceNotFoundException("Review", id.toString()));
@@ -69,13 +69,13 @@ public class ReviewController {
     }
 
     @GetMapping("/admin/reviews/pending")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_PRODUCTS')")
     public ResponseEntity<List<ProductReview>> pending() {
         return ResponseEntity.ok(reviewRepo.findByApprovedFalseOrderByCreatedAtDesc());
     }
 
     @DeleteMapping("/admin/reviews/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_PRODUCTS')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         // Load first so we know which product to refresh; deleting an approved
         // review must lower that product's rating/count, not leave them stale.

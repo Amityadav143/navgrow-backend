@@ -108,6 +108,13 @@ public class OrderController {
             Product product = productRepo.findById(itemReq.getProductId())
                 .orElseThrow(() -> new ResourceNotFoundException("Product", itemReq.getProductId().toString()));
             if (!product.isActive()) throw new BadRequestException("Product not available: " + product.getName());
+            // Limited delivery area: an admin can sell a product only within
+            // selected pincodes. Checkout warns first; this is the guarantee.
+            if (!product.deliversTo(req.getPincode())) {
+                throw new BadRequestException(product.getName() + " can't be delivered to pincode " + req.getPincode()
+                    + " (delivery area: " + com.navgrow.service.DeliveryService.areaLabel(product)
+                    + "). Please remove it or use an address in that area — or request a quote and our team will arrange delivery.");
+            }
             if (itemReq.getQuantity() == null || itemReq.getQuantity() < 1) {
                 throw new BadRequestException("Invalid quantity for " + product.getName());
             }
@@ -499,7 +506,7 @@ public class OrderController {
     }
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_ORDERS')")
     public ResponseEntity<Page<Order>> listOrders(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
@@ -511,14 +518,14 @@ public class OrderController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_ORDERS')")
     public ResponseEntity<Order> getOrder(@PathVariable UUID id) {
         return ResponseEntity.ok(orderRepo.findById(id)
             .orElseThrow(() -> new ResourceNotFoundException("Order", id.toString())));
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_ORDERS')")
     @org.springframework.transaction.annotation.Transactional
     public ResponseEntity<Order> updateStatus(
             @PathVariable UUID id, @RequestParam OrderStatus status,

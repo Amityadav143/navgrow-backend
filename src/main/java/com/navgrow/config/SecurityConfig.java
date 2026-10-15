@@ -45,10 +45,13 @@ public class SecurityConfig {
         "/oauth2/**", "/login/oauth2/**"
     };
 
+    // NOTE: "/coupons/validate" is a POST (CouponController) — it must be public
+    // here, otherwise the "/coupons/**" staff rule below rejected every customer
+    // trying to apply a coupon at checkout with 403.
     private static final String[] PUBLIC_POST = {
         "/analytics/track",
-        "/auth/**", "/contact", "/newsletter/**",
-        "/quotes", "/rfqs",
+        "/auth/**", "/contact", "/newsletter/**", "/stock-notifications",
+        "/quotes", "/rfqs", "/coupons/validate",
         "/jobs/*/apply", "/jobs/resume", "/products/*/reviews",
         "/chat", "/analytics/events", "/catalogue/leads"
     };
@@ -79,6 +82,13 @@ public class SecurityConfig {
                 .referrerPolicy(r -> r.policy(org.springframework.security.web.header.writers
                     .ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN)))
             .cors(cors -> {})
+            // Unauthenticated API calls (no / expired / invalid token) get 401, not
+            // 403, so the SPA silently refreshes the access token and retries.
+            // A 403 used to leave staff "logged in" with an empty dashboard once
+            // their access token expired.
+            .exceptionHandling(e -> e.authenticationEntryPoint(
+                new org.springframework.security.web.authentication.HttpStatusEntryPoint(
+                    org.springframework.http.HttpStatus.UNAUTHORIZED)))
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.GET, PUBLIC_GET).permitAll()
@@ -99,7 +109,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST,   "/gallery/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_GALLERY")
                 .requestMatchers(HttpMethod.PUT,    "/gallery/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_GALLERY")
                 .requestMatchers(HttpMethod.DELETE, "/gallery/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_GALLERY")
-                .requestMatchers(HttpMethod.POST,   "/files/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_NEWS","PERM_PRODUCTS","PERM_PROJECTS","PERM_GALLERY")
+                .requestMatchers(HttpMethod.POST,   "/files/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_NEWS","PERM_PRODUCTS","PERM_PROJECTS","PERM_GALLERY","PERM_JOBS","PERM_TENDERS","PERM_CATALOG","PERM_SETTINGS")
                 // Jobs / tenders content
                 .requestMatchers(HttpMethod.POST,   "/jobs/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_JOBS")
                 .requestMatchers(HttpMethod.PUT,    "/jobs/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","ROLE_EDITOR","PERM_JOBS")
@@ -124,7 +134,7 @@ public class SecurityConfig {
                 // stays role-gated for broad access; per-area PERM_* checks live
                 // on the individual controllers (@PreAuthorize) where finer control
                 // is needed, so a permissioned user reaches exactly their sections.
-                .requestMatchers("/admin/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","PERM_ORDERS","PERM_QUOTES","PERM_RFQS","PERM_MESSAGES","PERM_USERS","PERM_CATALOGUE_LEADS","PERM_NOTIFICATIONS","PERM_AUDIT","PERM_TAX_RULES","PERM_DELIVERY_ZONES")
+                .requestMatchers("/admin/**").hasAnyAuthority("ROLE_SUPER_ADMIN","ROLE_ADMIN","ROLE_MANAGER","PERM_ORDERS","PERM_PRODUCTS","PERM_QUOTES","PERM_RFQS","PERM_MESSAGES","PERM_USERS","PERM_CATALOGUE_LEADS","PERM_NOTIFICATIONS","PERM_AUDIT","PERM_TAX_RULES","PERM_DELIVERY_ZONES")
                 .anyRequest().authenticated()
             )
             .userDetailsService(userDetailsService);

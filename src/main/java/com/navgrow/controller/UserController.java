@@ -96,7 +96,8 @@ public class UserController {
 
     // ── Admin: list all users ────────────────────────────────────────────────
     @GetMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
+    // PERM_USERS grants READ access only; role/status changes stay SUPER_ADMIN/ADMIN.
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN') or hasAuthority('PERM_USERS')")
     public ResponseEntity<Page<User>> list(
             @RequestParam(defaultValue="0") int page,
             @RequestParam(defaultValue="20") int size,
@@ -111,7 +112,7 @@ public class UserController {
 
     // ── Admin: get user by id ────────────────────────────────────────────────
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN') or hasAuthority('PERM_USERS')")
     public ResponseEntity<User> getById(@PathVariable UUID id) {
         return ResponseEntity.ok(repo.findById(id)
             .orElseThrow(() -> new ResourceNotFoundException("User not found")));
@@ -140,6 +141,10 @@ public class UserController {
         // Guard: a non-super actor may not modify a SUPER_ADMIN/ADMIN account.
         if (!actorIsSuper && (user.getRole() == UserRole.SUPER_ADMIN || user.getRole() == UserRole.ADMIN))
             throw new BadRequestException("Only a Super Admin can modify an Admin account.");
+        // Guard: nobody changes their OWN role here — avoids a Super Admin
+        // accidentally demoting themselves and losing access to this screen.
+        if (isSelf(actor, user))
+            throw new BadRequestException("You can't change your own role. Ask another Super Admin.");
         user.setRole(role);
         return ResponseEntity.ok(repo.save(user));
     }
@@ -163,6 +168,10 @@ public class UserController {
                 catch (IllegalArgumentException ex) { throw new BadRequestException("Unknown permission: " + raw); }
             }
         }
+        // Role-baseline sections are implicit (see Permission.defaultsFor) — store
+        // only the EXTRA grants, so they don't linger if the role is later lowered.
+        for (com.navgrow.enums.Permission p : com.navgrow.enums.Permission.defaultsFor(user.getRole()))
+            clean.remove(p.name());
         user.setPermissions(clean.isEmpty() ? null : String.join(",", clean));
         return ResponseEntity.ok(repo.save(user));
     }
@@ -175,6 +184,8 @@ public class UserController {
         User user = repo.findById(id).orElseThrow();
         if (!isSuperAdmin(actor) && (user.getRole() == UserRole.SUPER_ADMIN || user.getRole() == UserRole.ADMIN))
             throw new BadRequestException("Only a Super Admin can modify an Admin account.");
+        if (isSelf(actor, user))
+            throw new BadRequestException("You can't deactivate your own account.");
         user.setActive(!user.isActive());
         return ResponseEntity.ok(repo.save(user));
     }
@@ -185,9 +196,12 @@ public class UserController {
     public ResponseEntity<Void> delete(@PathVariable UUID id,
                                        @AuthenticationPrincipal UserDetails actor) {
         User user = repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        // A SUPER_ADMIN account can only be deleted by another SUPER_ADMIN.
-        if (user.getRole() == UserRole.SUPER_ADMIN && !isSuperAdmin(actor))
-            throw new BadRequestException("Only a Super Admin can delete a Super Admin account.");
+        // Admin-tier accounts can only be deleted by a SUPER_ADMIN (same rule as
+        // role/status changes), and nobody deletes their own account from here.
+        if (!isSuperAdmin(actor) && (user.getRole() == UserRole.SUPER_ADMIN || user.getRole() == UserRole.ADMIN))
+            throw new BadRequestException("Only a Super Admin can delete an Admin or Super Admin account.");
+        if (isSelf(actor, user))
+            throw new BadRequestException("You can't delete your own account.");
         repo.deleteById(id);
         return ResponseEntity.noContent().build();
     }
@@ -212,6 +226,12 @@ public class UserController {
             .active(true)
             .build();
         return ResponseEntity.ok(repo.save(user));
+    }
+
+    /** True if the actor is operating on their own account. */
+    private boolean isSelf(UserDetails actor, User target) {
+        return actor != null && target != null && target.getEmail() != null
+            && target.getEmail().equalsIgnoreCase(actor.getUsername());
     }
 
     /** True if the authenticated actor holds the SUPER_ADMIN role. */

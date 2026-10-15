@@ -26,6 +26,9 @@ public interface RfqRepository extends JpaRepository<Rfq, UUID> {
 
     Page<Rfq> findByUserIdOrderByCreatedAtDesc(UUID userId, Pageable pageable);
 
+    /** "My quotes": RFQs raised while signed in OR sent with the account's email. */
+    Page<Rfq> findByUserIdOrBuyerEmailIgnoreCaseOrderByCreatedAtDesc(UUID userId, String email, Pageable pageable);
+
     long countByStatus(RfqStatus status);
 
     /** Quoted RFQs whose validity date has passed — used by the auto-expire job. */

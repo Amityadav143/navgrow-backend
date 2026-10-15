@@ -52,7 +52,7 @@ public class FileUploadController {
     private String uploadDir;
 
     @PostMapping("/upload")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER') or hasRole('EDITOR')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasRole('EDITOR') or hasAnyAuthority('PERM_NEWS','PERM_PRODUCTS','PERM_PROJECTS','PERM_GALLERY','PERM_JOBS','PERM_TENDERS','PERM_CATALOG','PERM_SETTINGS')")
     public ResponseEntity<Map<String, Object>> upload(@RequestParam("file") MultipartFile file) throws IOException {
         if (file == null || file.isEmpty()) throw new BadRequestException("No file received. Choose a file to upload.");
         if (file.getSize() > MAX_BYTES)     throw new BadRequestException("File is too large. Maximum size is 8 MB.");

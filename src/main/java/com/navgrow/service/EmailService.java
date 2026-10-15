@@ -453,8 +453,13 @@ public class EmailService {
 
     // ── RFQ acknowledgement (buyer submitted) ─────────────────────────────────
     @Async
-    public void sendRfqAcknowledgement(String toEmail, String toName, String rfqNumber, int itemCount) {
+    public void sendRfqAcknowledgement(String toEmail, String toName, String rfqNumber, int itemCount, int backorderCount) {
         if (!emailEnabled()) { log.info("[EMAIL] Disabled — RFQ acknowledgement not sent."); return; }
+        String backorderNote = backorderCount <= 0 ? "" :
+            "<p style='background:#fff7ed;padding:12px 16px;border-radius:8px;color:#9a3412'>" +
+            "<strong>" + backorderCount + " item" + (backorderCount == 1 ? " is" : "s are") +
+            " currently out of stock</strong> (or above the quantity we hold). We will source " +
+            (backorderCount == 1 ? "it" : "them") + " for you and confirm availability and lead time in your quotation.</p>";
         try {
             var mime = mailSender.createMimeMessage();
             var helper = new org.springframework.mail.javamail.MimeMessageHelper(mime, true, "UTF-8");
@@ -469,8 +474,10 @@ public class EmailService {
                 "<strong>" + rfqNumber + "</strong> with <strong>" + itemCount + " item(s)</strong>.</p>" +
                 "<p>Our procurement team will review your requirement and send you a formal, " +
                 "GST-compliant quotation within <strong>1 business day</strong>.</p>" +
+                backorderNote +
                 "<p style='background:#eff6ff;padding:12px 16px;border-radius:8px;color:#1e40af'>" +
                 "Reference: <strong>" + rfqNumber + "</strong></p>" +
+                "<p>Track it any time at <a href='" + siteUrl() + "/saved-quotes'>" + siteUrl().replaceFirst("^https?://", "") + "/saved-quotes</a>.</p>" +
                 "<p>For urgent requirements, call us at <strong>+91 89270 70972</strong>.</p>" +
                 "<p style='color:#64748b;font-size:13px;margin-top:24px'>Navgrow Engineering Service Pvt. Ltd.<br/>" +
                 "DPIIT Recognised · MSME Registered · navgrow.org</p>" +
@@ -478,6 +485,73 @@ public class EmailService {
             mailSender.send(mime);
         } catch (Exception e) {
             log.warn("Failed to send RFQ acknowledgement: {}", e.getMessage());
+        }
+    }
+
+    /** Public site base URL without a trailing slash (never null). */
+    private String siteUrl() {
+        String base = (frontendUrl == null || frontendUrl.isBlank()) ? "https://navgrow.org" : frontendUrl.trim();
+        return base.replaceAll("/+$", "");
+    }
+
+    /**
+     * Alerts the quotes inbox the moment an RFQ arrives — with every line and a
+     * clear BACKORDER flag on items that were out of stock — so the team can
+     * respond (and start sourcing) within the hour, not when someone next opens
+     * the dashboard. Best-effort: never throws.
+     */
+    @Async
+    public void sendRfqAdminNotification(com.navgrow.entity.Rfq rfq) {
+        if (!emailEnabled()) { log.info("[EMAIL] Disabled — RFQ team alert not sent."); return; }
+        try {
+            var items = rfq.getItems() == null ? java.util.List.<com.navgrow.entity.RfqItem>of() : rfq.getItems();
+            long backorders = items.stream().filter(com.navgrow.entity.RfqItem::isBackorder).count();
+            var mime   = mailSender.createMimeMessage();
+            var helper = new MimeMessageHelper(mime, true, "UTF-8");
+            helper.setFrom(fromEmail());
+            helper.setTo(quotesEmail());
+            if (rfq.getBuyerEmail() != null && !rfq.getBuyerEmail().isBlank()) helper.setReplyTo(rfq.getBuyerEmail());
+            helper.setSubject("[New RFQ] " + rfq.getRfqNumber() + " — " + safe(rfq.getBuyerName())
+                + (rfq.getCompany() != null && !rfq.getCompany().isBlank() ? " (" + safe(rfq.getCompany()) + ")" : "")
+                + (backorders > 0 ? " · " + backorders + " backorder" + (backorders == 1 ? "" : "s") : ""));
+
+            StringBuilder lines = new StringBuilder();
+            for (var it : items) {
+                String stock = it.getStockAtRequest() == null ? "—"
+                    : (it.getStockAtRequest() <= 0 ? "Out of stock" : it.getStockAtRequest() + " in stock");
+                lines.append("<tr>")
+                     .append("<td style='padding:6px 8px;border:1px solid #e5e7eb'>").append(esc(it.getProductName()))
+                     .append(it.getSpecification() != null && !it.getSpecification().isBlank()
+                             ? "<br/><span style='color:#64748b;font-size:12px'>" + esc(it.getSpecification()) + "</span>" : "")
+                     .append("</td>")
+                     .append("<td style='padding:6px 8px;border:1px solid #e5e7eb;text-align:center'>").append(it.getQuantity()).append("</td>")
+                     .append("<td style='padding:6px 8px;border:1px solid #e5e7eb;text-align:center;")
+                     .append(it.isBackorder() ? "color:#c2410c;font-weight:700'>BACKORDER · " : "color:#047857'>")
+                     .append(esc(stock)).append("</td></tr>");
+            }
+            String html = "<div style='font-family:Arial,sans-serif;max-width:620px'>"
+                + "<h2 style='color:#1e3a8a;margin-bottom:4px'>New Request for Quote</h2>"
+                + "<p style='margin-top:0;color:#475569'>" + esc(rfq.getRfqNumber()) + " · " + items.size() + " item(s)"
+                + (backorders > 0 ? " · <strong style='color:#c2410c'>" + backorders + " need sourcing</strong>" : "") + "</p>"
+                + "<table style='border-collapse:collapse;width:100%;font-size:14px;margin-bottom:14px'>"
+                + row("Buyer", rfq.getBuyerName()) + row("Email", rfq.getBuyerEmail()) + row("Phone", rfq.getBuyerPhone())
+                + row("Company", rfq.getCompany()) + row("GSTIN", rfq.getGstin())
+                + row("Deliver to", java.util.stream.Stream.of(rfq.getDeliveryCity(), rfq.getDeliveryState(), rfq.getPincode())
+                        .filter(s -> s != null && !s.isBlank()).collect(java.util.stream.Collectors.joining(", ")))
+                + row("Notes", rfq.getNotes())
+                + "</table>"
+                + "<table style='border-collapse:collapse;width:100%;font-size:14px'>"
+                + "<tr style='background:#f1f5f9'><th style='padding:6px 8px;border:1px solid #e5e7eb;text-align:left'>Item</th>"
+                + "<th style='padding:6px 8px;border:1px solid #e5e7eb'>Qty</th>"
+                + "<th style='padding:6px 8px;border:1px solid #e5e7eb'>Stock at request</th></tr>"
+                + lines + "</table>"
+                + "<p style='margin-top:18px'><a href='" + siteUrl() + "/admin/rfqs' style='background:#1e3a8a;color:#fff;"
+                + "padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold'>Price it in the RFQ Pipeline</a></p>"
+                + "<p style='color:#64748b;font-size:12px'>Reply to this email to reach the buyer directly.</p></div>";
+            helper.setText(html, true);
+            mailSender.send(mime);
+        } catch (Exception e) {
+            log.warn("Failed to send RFQ team alert: {}", e.getMessage());
         }
     }
 

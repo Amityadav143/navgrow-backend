@@ -38,7 +38,7 @@ public class GalleryController {
             : repo.findByActiveTrueOrderBySortOrderAscCreatedAtDesc());
     }
 
-    @PostMapping @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_GALLERY')")
     @CacheEvict(value = CacheConfig.GALLERY_PUBLIC, allEntries = true)
     public ResponseEntity<GalleryItem> create(@Valid @RequestBody GalleryReq req) {
         GalleryItem item = GalleryItem.builder().title(req.getTitle())
@@ -51,7 +51,7 @@ public class GalleryController {
         return ResponseEntity.status(201).body(saved);
     }
 
-    @PutMapping("/{id}") @PreAuthorize("hasRole('ADMIN')")
+    @PutMapping("/{id}") @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_GALLERY')")
     @CacheEvict(value = CacheConfig.GALLERY_PUBLIC, allEntries = true)
     public ResponseEntity<GalleryItem> update(@PathVariable UUID id, @Valid @RequestBody GalleryReq req) {
         GalleryItem item = repo.findById(id)
@@ -68,7 +68,7 @@ public class GalleryController {
         return ResponseEntity.ok(saved);
     }
 
-    @DeleteMapping("/{id}") @PreAuthorize("hasRole('ADMIN')")
+    @DeleteMapping("/{id}") @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_GALLERY')")
     @CacheEvict(value = CacheConfig.GALLERY_PUBLIC, allEntries = true)
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         GalleryItem item = repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("GalleryItem", id.toString()));

@@ -53,4 +53,38 @@ public enum Permission {
     public static Set<Permission> all() {
         return new LinkedHashSet<>(Arrays.asList(values()));
     }
+
+    /**
+     * Baseline sections a role gets WITHOUT any custom grant. Custom grants from a
+     * SUPER_ADMIN are added on top (see User#getEffectivePermissions).
+     *
+     *   EDITOR  — website content: news, projects, gallery, careers, tenders and
+     *             site settings (matches the editor console + SecurityConfig's
+     *             "EDITOR + ADMIN + MANAGER can manage content" design).
+     *   MANAGER — everything an editor has, plus day-to-day operations: orders,
+     *             quotes, RFQs, messages, catalogue leads, tax rules, delivery
+     *             zones, categories and the audit log.
+     *   USER    — nothing (customer).
+     *
+     * Products, coupons, users and notification settings stay Admin-level by
+     * default; a Super Admin can grant them to any manager/editor individually.
+     * Keep in sync with ROLE_DEFAULT_PERMISSIONS in the frontend AuthContext.
+     */
+    public static Set<Permission> defaultsFor(com.navgrow.enums.UserRole role) {
+        if (role == null) return new LinkedHashSet<>();
+        switch (role) {
+            case SUPER_ADMIN:
+            case ADMIN:
+                return all();
+            case MANAGER:
+                return new LinkedHashSet<>(Arrays.asList(
+                    ORDERS, QUOTES, RFQS, MESSAGES, CATALOGUE_LEADS, TAX_RULES, DELIVERY_ZONES,
+                    CATALOG, AUDIT, NEWS, PROJECTS, GALLERY, JOBS, TENDERS, SETTINGS));
+            case EDITOR:
+                return new LinkedHashSet<>(Arrays.asList(
+                    NEWS, PROJECTS, GALLERY, JOBS, TENDERS, SETTINGS));
+            default:
+                return new LinkedHashSet<>();
+        }
+    }
 }

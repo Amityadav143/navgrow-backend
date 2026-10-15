@@ -63,6 +63,23 @@ public class Product {
     @Column(name = "delivery_charge", precision = 10, scale = 2)
     private BigDecimal deliveryCharge;
 
+    // ── Limited delivery area (optional) ─────────────────────────────────────
+    // When deliveryRestricted is true the product can only be ORDERED for the
+    // pincodes listed in allowedPincodes — exact pincodes (734001), prefixes
+    // (734*) or ranges (734001-734015); see com.navgrow.util.PincodeRules. This
+    // is on top of the normal delivery zones, never instead of them. Buyers
+    // elsewhere are offered a quote (RFQ) instead of checkout.
+    @Builder.Default
+    @Column(name = "delivery_restricted")
+    private boolean deliveryRestricted = false;
+
+    @Column(name = "allowed_pincodes", columnDefinition = "TEXT")
+    private String allowedPincodes;
+
+    /** Optional customer-facing description, e.g. "Siliguri & Jalpaiguri only". */
+    @Column(name = "delivery_area_note", length = 255)
+    private String deliveryAreaNote;
+
     private String badge;
 
     @Column(name = "image_url", columnDefinition = "TEXT")
@@ -138,4 +155,14 @@ public class Product {
 
     @PreUpdate
     public void preUpdate() { this.updatedAt = LocalDateTime.now(); }
+
+    /**
+     * Can this product be delivered to {@code pincode}? Always true for products
+     * without a delivery-area restriction (zone serviceability is checked
+     * separately by DeliveryService).
+     */
+    public boolean deliversTo(String pincode) {
+        if (!deliveryRestricted) return true;
+        return com.navgrow.util.PincodeRules.matches(allowedPincodes, pincode);
+    }
 }

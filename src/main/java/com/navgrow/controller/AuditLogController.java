@@ -23,7 +23,7 @@ public class AuditLogController {
     private final AuditLogRepository repo;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyRole('ADMIN','MANAGER') or hasAuthority('PERM_AUDIT')")
     public ResponseEntity<Page<AuditLog>> list(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "100") int size) {

@@ -93,8 +93,10 @@ public class User {
     /**
      * The effective set of admin permissions for this user, exposed to the client
      * as a JSON array. SUPER_ADMIN and ADMIN implicitly have ALL permissions;
-     * MANAGER/EDITOR/USER get only what was explicitly granted via {@link #permissions}.
-     * Unknown/legacy tokens are ignored so the app never breaks on bad data.
+     * MANAGER and EDITOR get their role baseline ({@link #getRolePermissions()})
+     * PLUS anything explicitly granted via {@link #permissions}; USER gets only
+     * explicit grants. Unknown/legacy tokens are ignored so the app never breaks
+     * on bad data.
      */
     @Transient
     @JsonProperty("effectivePermissions")
@@ -104,7 +106,7 @@ public class User {
             for (com.navgrow.enums.Permission p : com.navgrow.enums.Permission.values()) out.add(p.name());
             return out;
         }
-        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>(getRolePermissions());
         if (permissions != null && !permissions.isBlank()) {
             for (String tok : permissions.split(",")) {
                 String t = tok.trim().toUpperCase();
@@ -113,6 +115,19 @@ public class User {
                 catch (IllegalArgumentException ignored) { /* skip unknown */ }
             }
         }
+        return out;
+    }
+
+    /**
+     * Sections included with the base role alone (no custom grant needed). The
+     * admin "Manage access" dialog shows these as locked, so a Super Admin can
+     * see exactly what a Manager/Editor already has and only grant extras.
+     */
+    @Transient
+    @JsonProperty("rolePermissions")
+    public java.util.Set<String> getRolePermissions() {
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        for (com.navgrow.enums.Permission p : com.navgrow.enums.Permission.defaultsFor(role)) out.add(p.name());
         return out;
     }
 

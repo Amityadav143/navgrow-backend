@@ -29,13 +29,30 @@ public class JwtUtil {
     @Value("${jwt.refresh-expiration}")
     private long refreshExpiration;
 
+    /**
+     * Loud start-up warning when the signing secret is the public default from
+     * application.yml: anyone who has seen this code could mint admin tokens.
+     * (Not fatal, so an existing deployment keeps running — but fix it.)
+     */
+    @jakarta.annotation.PostConstruct
+    void warnOnDefaultSecret() {
+        if (secret == null || secret.length() < 64
+                || secret.startsWith("navgrow-super-secret-key")) {
+            log.error("SECURITY WARNING: jwt.secret is the built-in default or too short. "
+                + "Set a long random JWT_SECRET environment variable (64+ characters) and restart.");
+        }
+    }
+
     private SecretKey getSigningKey() {
         return Keys.hmacShaKeyFor(secret.getBytes());
     }
 
     public String generateToken(UserDetails userDetails, Map<String, Object> claims) {
+        Map<String, Object> all = new HashMap<>();
+        if (claims != null) all.putAll(claims);
+        all.putIfAbsent(TYPE_CLAIM, TYPE_ACCESS);
         return Jwts.builder()
-                .claims(claims)
+                .claims(all)
                 .subject(userDetails.getUsername())
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + expiration))
@@ -43,12 +60,20 @@ public class JwtUtil {
                 .compact();
     }
 
+    /** Token-type claim: access tokens authenticate API calls, refresh tokens only mint new access tokens. */
+    public static final String TYPE_CLAIM = "token_type";
+    public static final String TYPE_ACCESS = "access";
+    public static final String TYPE_REFRESH = "refresh";
+
     public String generateToken(UserDetails userDetails) {
-        return generateToken(userDetails, new HashMap<>());
+        Map<String, Object> claims = new HashMap<>();
+        claims.put(TYPE_CLAIM, TYPE_ACCESS);
+        return generateToken(userDetails, claims);
     }
 
     public String generateRefreshToken(UserDetails userDetails) {
         return Jwts.builder()
+                .claim(TYPE_CLAIM, TYPE_REFRESH)
                 .subject(userDetails.getUsername())
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + refreshExpiration))
@@ -58,6 +83,15 @@ public class JwtUtil {
 
     public String extractEmail(String token) {
         return getClaims(token).getSubject();
+    }
+
+    /**
+     * The token's type ("access" / "refresh"), or null for tokens issued before
+     * types existed (still honoured until they expire naturally).
+     */
+    public String extractType(String token) {
+        Object t = getClaims(token).get(TYPE_CLAIM);
+        return t == null ? null : t.toString();
     }
 
     public boolean isTokenValid(String token, UserDetails userDetails) {

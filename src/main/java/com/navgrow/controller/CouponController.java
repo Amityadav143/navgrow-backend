@@ -99,11 +99,11 @@ public class CouponController {
     }
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_COUPONS')")
     public ResponseEntity<List<Coupon>> list() { return ResponseEntity.ok(repo.findAll()); }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_COUPONS')")
     public ResponseEntity<Coupon> update(@PathVariable UUID id, @Valid @RequestBody CouponReq req) {
         Coupon c = repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Coupon not found"));
         c.setCode(req.getCode().toUpperCase());
@@ -119,13 +119,13 @@ public class CouponController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_COUPONS')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         repo.deleteById(id); return ResponseEntity.noContent().build();
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_COUPONS')")
     public ResponseEntity<Coupon> create(@Valid @RequestBody CouponReq req) {
         if (repo.findByCodeIgnoreCase(req.getCode()).isPresent())
             throw new BadRequestException("Coupon code already exists.");
@@ -144,7 +144,7 @@ public class CouponController {
     }
 
     @PatchMapping("/{id}/toggle")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_COUPONS')")
     public ResponseEntity<Coupon> toggle(@PathVariable UUID id) {
         Coupon c = repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Coupon", id.toString()));
         c.setActive(!c.isActive());

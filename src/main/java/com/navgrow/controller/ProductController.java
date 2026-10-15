@@ -38,6 +38,8 @@ public class ProductController {
     @Data
     public static class ProductRequest {
         @NotBlank String name;
+        /** Optional admin SKU (letters, digits, - _ / .). Blank → auto-generated "NGP-…". */
+        @Size(max = 64) String sku;
         @NotBlank String category;
         String description;
         @NotNull @Positive BigDecimal price;
@@ -60,6 +62,11 @@ public class ProductController {
         String benefits;
         String applications;
         String specifications;
+        // Limited delivery area. Null deliveryRestricted = "not sent" (e.g. an
+        // older client or a CSV without these columns) → existing values are kept.
+        Boolean deliveryRestricted;
+        String allowedPincodes;      // "734001, 7340*, 734101-734105"
+        @Size(max = 255) String deliveryAreaNote;
     }
 
     @GetMapping
@@ -72,7 +79,9 @@ public class ProductController {
             @RequestParam(required = false) String direction) {
         // Guard page/size and whitelist the sort column so bad input can't 500.
         int safePage = Math.max(0, page);
-        int safeSize = Math.min(Math.max(1, size), 100);
+        // 300: the shop filters/sorts client-side over the whole catalogue, so a
+        // low cap silently hid every product past the first page.
+        int safeSize = Math.min(Math.max(1, size), 300);
         String safeSort = SORTABLE.contains(sort) ? sort : "name";
         // Explicit direction wins; otherwise sensible defaults per column
         // (newest/highest first for time- and quality-ranked columns, A→Z for names).
@@ -128,14 +137,69 @@ public class ProductController {
         return ResponseEntity.ok(new java.util.ArrayList<>(merged));
     }
 
+    /**
+     * Admin catalogue view — EVERY product, including drafts and deactivated ones
+     * (the public list only returns active products, so drafts used to vanish from
+     * the admin screen and deleted products could never be restored).
+     * status: active | inactive | restricted | outofstock | lowstock (optional).
+     */
+    @GetMapping("/manage")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_PRODUCTS')")
+    public ResponseEntity<Page<Product>> manage(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String status) {
+        org.springframework.data.jpa.domain.Specification<Product> spec = (root, cq, cb) -> {
+            java.util.List<jakarta.persistence.criteria.Predicate> ps = new java.util.ArrayList<>();
+            if (q != null && !q.isBlank()) {
+                String like = "%" + q.trim().toLowerCase() + "%";
+                ps.add(cb.or(
+                    cb.like(cb.lower(root.<String>get("name")), like),
+                    cb.like(cb.lower(root.<String>get("sku")), like),
+                    cb.like(cb.lower(root.<String>get("category")), like)));
+            }
+            if (category != null && !category.isBlank()) ps.add(cb.equal(root.<String>get("category"), category.trim()));
+            String st = status == null ? "" : status.trim().toLowerCase();
+            switch (st) {
+                case "active"     -> ps.add(cb.isTrue(root.<Boolean>get("active")));
+                case "inactive"   -> ps.add(cb.isFalse(root.<Boolean>get("active")));
+                case "restricted" -> ps.add(cb.isTrue(root.<Boolean>get("deliveryRestricted")));
+                case "outofstock" -> ps.add(cb.lessThanOrEqualTo(root.<Integer>get("stockQty"), 0));
+                case "lowstock"   -> ps.add(cb.lessThan(root.<Integer>get("stockQty"), 10));
+                default -> { /* all */ }
+            }
+            return cb.and(ps.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+        Pageable pageable = PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 200),
+            Sort.by(Sort.Direction.DESC, "createdAt"));
+        return ResponseEntity.ok(repo.findAll(spec, pageable));
+    }
+
     @GetMapping("/{slug}")
     public ResponseEntity<Product> getBySlug(@PathVariable String slug) {
-        return ResponseEntity.ok(repo.findBySlug(slug)
-            .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + slug)));
+        Product p = repo.findBySlug(slug)
+            .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + slug));
+        // Drafts and removed products are invisible to customers (they used to stay
+        // reachable by URL and failed only at checkout); staff can still preview them.
+        if (!p.isActive() && !canManageProducts()) {
+            throw new ResourceNotFoundException("Product not found: " + slug);
+        }
+        return ResponseEntity.ok(p);
+    }
+
+    private static boolean canManageProducts() {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) return false;
+        return auth.getAuthorities().stream().anyMatch(a -> {
+            String r = a.getAuthority();
+            return "ROLE_SUPER_ADMIN".equals(r) || "ROLE_ADMIN".equals(r) || "PERM_PRODUCTS".equals(r);
+        });
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_PRODUCTS')")
     @CacheEvict(value = CacheConfig.PRODUCT_CATEGORIES, allEntries = true)
     public ResponseEntity<Product> create(@Valid @RequestBody ProductRequest req) {
         Product saved = repo.save(buildFromRequest(req));
@@ -144,12 +208,19 @@ public class ProductController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_PRODUCTS')")
     @CacheEvict(value = CacheConfig.PRODUCT_CATEGORIES, allEntries = true)
     public ResponseEntity<Product> update(@PathVariable UUID id, @Valid @RequestBody ProductRequest req) {
         Product p = repo.findById(id)
             .orElseThrow(() -> new ResourceNotFoundException("Product", id.toString()));
         applyToEntity(req, p);   // name/slug stay stable on update (slug not regenerated)
+        // SKU: only validated when actually changed, so legacy SKUs never block an edit.
+        String rawSku = req.getSku();
+        if (rawSku != null && !rawSku.isBlank() && !rawSku.trim().equalsIgnoreCase(p.getSku())) {
+            String sku = cleanSku(rawSku);
+            ensureSkuFree(sku, p.getId());
+            p.setSku(sku);
+        }
         Product saved = repo.save(p);
         audit.log("PRODUCT_UPDATE", "Product", saved.getId().toString(), saved.getName());
         return ResponseEntity.ok(saved);
@@ -162,7 +233,7 @@ public class ProductController {
      * Returns the created products.
      */
     @PostMapping("/bulk")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_PRODUCTS')")
     @org.springframework.transaction.annotation.Transactional
     @CacheEvict(value = CacheConfig.PRODUCT_CATEGORIES, allEntries = true)
     public ResponseEntity<Map<String, Object>> bulkCreate(@Valid @RequestBody List<ProductRequest> reqs) {
@@ -173,7 +244,14 @@ public class ProductController {
             throw new BadRequestException("Bulk upload is limited to 500 products per request");
         }
         List<Product> toSave = new ArrayList<>(reqs.size());
+        Set<String> batchSkus = new HashSet<>();
+        int row = 1;
         for (ProductRequest req : reqs) {
+            row++;   // row 1 is the CSV header
+            String sku = cleanSku(req.getSku());
+            if (sku != null && !batchSkus.add(sku)) {
+                throw new BadRequestException("Row " + row + ": SKU " + sku + " appears more than once in this file.");
+            }
             toSave.add(buildFromRequest(req));
         }
         List<Product> saved = repo.saveAll(toSave);
@@ -186,7 +264,7 @@ public class ProductController {
 
     /** Quick stock adjustment without sending the whole product payload. */
     @PatchMapping("/{id}/stock")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_PRODUCTS')")
     public ResponseEntity<Product> updateStock(@PathVariable UUID id, @RequestParam Integer qty) {
         if (qty == null || qty < 0) throw new BadRequestException("Stock quantity must be zero or positive");
         Product p = repo.findById(id)
@@ -196,7 +274,7 @@ public class ProductController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_PRODUCTS')")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         Product p = repo.findById(id)
             .orElseThrow(() -> new ResourceNotFoundException("Product", id.toString()));
@@ -211,12 +289,34 @@ public class ProductController {
     /** Builds a brand-new Product (generates slug + SKU) from a request. */
     private Product buildFromRequest(ProductRequest req) {
         String slug = slugUtil.uniqueSlug(req.getName(), repo::existsBySlug);
+        String sku = cleanSku(req.getSku());
+        if (sku != null) ensureSkuFree(sku, null);
         Product p = Product.builder()
-            .sku("NGP-" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().substring(0, 4))
+            .sku(sku != null ? sku
+                 : "NGP-" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().substring(0, 4))
             .slug(slug)
             .build();
         applyToEntity(req, p);
         return p;
+    }
+
+    /** Trimmed, upper-cased admin SKU, or null when blank. Rejects odd characters. */
+    private static String cleanSku(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        String s = raw.trim().toUpperCase();
+        if (!s.matches("^[A-Z0-9][A-Z0-9._/-]{0,63}$")) {
+            throw new BadRequestException("SKU may use only letters, digits, '-', '_', '/' and '.' (max 64 characters).");
+        }
+        return s;
+    }
+
+    /** SKUs are unique — a clear message beats a database constraint error. */
+    private void ensureSkuFree(String sku, UUID selfId) {
+        repo.findBySku(sku).ifPresent(other -> {
+            if (selfId == null || !other.getId().equals(selfId)) {
+                throw new BadRequestException("SKU " + sku + " is already used by \"" + other.getName() + "\".");
+            }
+        });
     }
 
     /** Copies every editable field from the request onto an existing entity. */
@@ -262,5 +362,32 @@ public class ProductController {
         p.setBenefits(req.getBenefits());
         p.setApplications(req.getApplications());
         p.setSpecifications(req.getSpecifications());
+        applyDeliveryArea(req, p);
+    }
+
+    /**
+     * Validates + stores the optional "deliver only to these pincodes" rule. The
+     * list is normalised (canonical entries, duplicates removed) and rejected with
+     * a clear message if any entry is malformed, so an admin can never save a rule
+     * that silently blocks every buyer.
+     */
+    private void applyDeliveryArea(ProductRequest req, Product p) {
+        if (req.getDeliveryRestricted() == null) return;          // not sent → unchanged
+        String normalized;
+        try {
+            normalized = com.navgrow.util.PincodeRules.normalize(req.getAllowedPincodes());
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException(e.getMessage());
+        }
+        boolean restricted = req.getDeliveryRestricted();
+        if (restricted && normalized == null) {
+            throw new BadRequestException("Add at least one pincode, prefix (e.g. 734*) or range for the limited "
+                + "delivery area — or switch the restriction off.");
+        }
+        p.setDeliveryRestricted(restricted);
+        // Keep the list even when switched off, so the admin can toggle it back on.
+        p.setAllowedPincodes(normalized);
+        String note = req.getDeliveryAreaNote();
+        p.setDeliveryAreaNote(note == null || note.isBlank() ? null : note.trim());
     }
 }

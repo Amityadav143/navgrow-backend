@@ -58,13 +58,13 @@ public class CatalogController {
         return ResponseEntity.ok(repo.findByItemTypeAndActiveTrueOrderBySortOrderAscNameAsc(type));
     }
 
-    @GetMapping("/manage") @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @GetMapping("/manage") @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_CATALOG')")
     public ResponseEntity<List<CatalogItem>> listAll(@RequestParam(required = false) String type) {
         if (type != null) { validateType(type); return ResponseEntity.ok(repo.findByItemTypeOrderBySortOrderAscNameAsc(type)); }
         return ResponseEntity.ok(repo.findAllByOrderByItemTypeAscSortOrderAscNameAsc());
     }
 
-    @PostMapping @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PostMapping @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_CATALOG')")
     @CacheEvict(value = {CacheConfig.CATALOG_PUBLIC, CacheConfig.PRODUCT_CATEGORIES}, allEntries = true)
     public ResponseEntity<CatalogItem> create(@Valid @RequestBody CatalogReq req) {
         validateType(req.getItemType());
@@ -84,7 +84,7 @@ public class CatalogController {
         return ResponseEntity.status(201).body(saved);
     }
 
-    @PutMapping("/{id}") @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PutMapping("/{id}") @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_CATALOG')")
     @CacheEvict(value = {CacheConfig.CATALOG_PUBLIC, CacheConfig.PRODUCT_CATEGORIES}, allEntries = true)
     public ResponseEntity<CatalogItem> update(@PathVariable UUID id, @Valid @RequestBody CatalogReq req) {
         validateType(req.getItemType());
@@ -105,7 +105,7 @@ public class CatalogController {
         return ResponseEntity.ok(saved);
     }
 
-    @DeleteMapping("/{id}") @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @DeleteMapping("/{id}") @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasRole('MANAGER') or hasAuthority('PERM_CATALOG')")
     @CacheEvict(value = {CacheConfig.CATALOG_PUBLIC, CacheConfig.PRODUCT_CATEGORIES}, allEntries = true)
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         repo.deleteById(id);

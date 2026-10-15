@@ -45,7 +45,7 @@ public class MailDiagnosticsController {
 
     /** Shows the effective configuration without ever exposing the password. */
     @GetMapping("/config")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_NOTIFICATIONS')")
     public ResponseEntity<Map<String, Object>> config() {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("host", host);
@@ -59,7 +59,7 @@ public class MailDiagnosticsController {
 
     /** Opens an SMTP connection and reports exactly why it failed, if it did. */
     @GetMapping("/verify")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_NOTIFICATIONS')")
     public ResponseEntity<Map<String, Object>> verify() {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("host", host);
@@ -86,7 +86,7 @@ public class MailDiagnosticsController {
 
     /** Sends a real message synchronously so the true error surfaces. */
     @PostMapping("/test")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasRole('ADMIN') or hasAuthority('PERM_NOTIFICATIONS')")
     public ResponseEntity<Map<String, Object>> test(@RequestParam(required = false) String to) {
         String recipient = (to == null || to.isBlank()) ? contactEmail : to.trim();
         Map<String, Object> out = new LinkedHashMap<>();

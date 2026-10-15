@@ -38,6 +38,13 @@ import java.util.Optional;
 public class DeliveryService {
 
     private final DeliveryZoneRepository zoneRepo;
+    private final com.navgrow.repository.ProductRepository productRepo;
+
+    private static final java.util.regex.Pattern UUID_RE = java.util.regex.Pattern.compile(
+        "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+
+    /** A product that cannot be delivered to the checked pincode (limited delivery area). */
+    public record RestrictedItem(String productId, String slug, String name, String areaNote) {}
 
     /** What the storefront needs to render a serviceability answer. */
     @Data @Builder
@@ -46,6 +53,13 @@ public class DeliveryService {
         private String  pincode;
         private String  zone;
         private String  note;
+
+        /**
+         * Products from the request (see {@link #restrictedItems}) that are sold
+         * only in a limited delivery area which excludes this pincode. Empty when
+         * every product can go there; null when no products were asked about.
+         */
+        private List<RestrictedItem> restrictedItems;
 
         private BigDecimal standardCharge;
         private Integer    etaMinDays;
@@ -266,5 +280,37 @@ public class DeliveryService {
 
     public List<DeliveryZone> allZones() {
         return zoneRepo.findAllByOrderByPriorityDescNameAsc();
+    }
+
+    /**
+     * Which of the given products can NOT be delivered to {@code pincode} because
+     * an admin limited them to certain pincodes. {@code productRefs} is a
+     * comma-separated list of product UUIDs and/or slugs (the storefront sends
+     * whichever it has); unknown references are ignored. Capped at 100 entries.
+     */
+    public List<RestrictedItem> restrictedItems(String pincode, String productRefs) {
+        java.util.List<RestrictedItem> out = new java.util.ArrayList<>();
+        if (productRefs == null || productRefs.isBlank() || !isValidPincode(pincode)) return out;
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        int checked = 0;
+        for (String raw : productRefs.split(",")) {
+            String ref = raw.trim();
+            if (ref.isEmpty() || !seen.add(ref)) continue;
+            if (++checked > 100) break;
+            Optional<com.navgrow.entity.Product> product = Optional.empty();
+            if (UUID_RE.matcher(ref).matches()) product = productRepo.findById(java.util.UUID.fromString(ref));
+            if (product.isEmpty()) product = productRepo.findBySlug(ref);
+            product.filter(p -> !p.deliversTo(pincode))
+                   .ifPresent(p -> out.add(new RestrictedItem(
+                        String.valueOf(p.getId()), p.getSlug(), p.getName(), areaLabel(p))));
+        }
+        return out;
+    }
+
+    /** "Siliguri & Jalpaiguri only" if the admin wrote a note, else a short pincode summary. */
+    public static String areaLabel(com.navgrow.entity.Product p) {
+        if (p.getDeliveryAreaNote() != null && !p.getDeliveryAreaNote().isBlank()) return p.getDeliveryAreaNote();
+        String s = com.navgrow.util.PincodeRules.summary(p.getAllowedPincodes(), 6);
+        return s.isEmpty() ? "selected pincodes only" : "pincodes " + s;
     }
 }
