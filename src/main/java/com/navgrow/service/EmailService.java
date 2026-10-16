@@ -714,12 +714,20 @@ public class EmailService {
             helper.setTo(ordersEmail());
             if (order.getCustomerEmail() != null && !order.getCustomerEmail().isBlank())
                 helper.setReplyTo(order.getCustomerEmail());
-            helper.setSubject("New order " + order.getOrderNumber() + " — ₹"
+            boolean shortfall = order.getNotes() != null && order.getNotes().contains("[STOCK SHORTFALL]");
+            helper.setSubject((shortfall ? "⚠ STOCK SHORTFALL — " : "") + "New order " + order.getOrderNumber() + " — ₹"
                 + (order.getGrandTotal() == null ? "" : order.getGrandTotal().toPlainString())
                 + " (" + safe(order.getPaymentMethod()) + ")");
             StringBuilder html = new StringBuilder()
                 .append("<div style='font-family:Inter,Arial,sans-serif;max-width:600px;margin:auto'>")
-                .append("<h2 style='color:#2563eb'>New order received</h2>")
+                .append("<h2 style='color:#2563eb'>New order received</h2>");
+            if (shortfall) {
+                html.append("<p style='background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:12px 14px;border-radius:8px'>")
+                    .append("<strong>Action needed:</strong> this order was paid, but stock ran out before payment completed. ")
+                    .append(esc(order.getNotes().substring(order.getNotes().indexOf("[STOCK SHORTFALL]"))))
+                    .append("</p>");
+            }
+            html
                 .append("<table style='width:100%;border-collapse:collapse;margin:12px 0'>")
                 .append(row("Order", order.getOrderNumber()))
                 .append(row("Customer", order.getCustomerName()))

@@ -137,6 +137,60 @@ public class ProductController {
         return ResponseEntity.ok(new java.util.ArrayList<>(merged));
     }
 
+    private static final java.util.regex.Pattern UUID_RE = java.util.regex.Pattern.compile(
+        "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+
+    /**
+     * Live availability for the cart, wishlist, recently-viewed and re-order —
+     * anything that only holds a saved copy of a product. Pass up to 100 product
+     * ids and/or slugs: {@code GET /products/availability?refs=id1,slug2}.
+     * "inStock" means it can be bought online right now (active, and at least the
+     * minimum order quantity in stock). Stock that was never set counts as zero.
+     */
+    @GetMapping("/availability")
+    public ResponseEntity<List<Map<String, Object>>> availability(@RequestParam(defaultValue = "") String refs) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (String raw : refs.split(",")) {
+            String ref = raw.trim();
+            if (ref.isEmpty() || !seen.add(ref)) continue;
+            if (seen.size() > 100) break;
+            Optional<Product> found = Optional.empty();
+            if (UUID_RE.matcher(ref).matches()) found = repo.findById(UUID.fromString(ref));
+            if (found.isEmpty()) found = repo.findBySlug(ref);
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("ref", ref);
+            if (found.isEmpty()) {
+                m.put("found", false);
+                m.put("inStock", false);
+                out.add(m);
+                continue;
+            }
+            Product p = found.get();
+            int stock = p.getStockQty() == null ? 0 : Math.max(0, p.getStockQty());
+            int moq = p.getMinOrderQty() == null ? 1 : Math.max(1, p.getMinOrderQty());
+            m.put("found", true);
+            m.put("id", p.getId());
+            m.put("slug", p.getSlug());
+            m.put("name", p.getName());
+            m.put("active", p.isActive());
+            m.put("price", p.getPrice());
+            m.put("mrp", p.getMrp());
+            m.put("gstRate", p.getGstRate());
+            m.put("hsnCode", p.getHsnCode());
+            m.put("imageUrl", p.getImageUrl());
+            m.put("stockQty", stock);
+            m.put("minOrderQty", moq);
+            m.put("inStock", p.isActive() && stock >= moq);
+            m.put("deliveryCharge", p.getDeliveryCharge());
+            m.put("deliveryRestricted", p.isDeliveryRestricted());
+            m.put("allowedPincodes", p.getAllowedPincodes());
+            m.put("deliveryAreaNote", p.getDeliveryAreaNote());
+            out.add(m);
+        }
+        return ResponseEntity.ok(out);
+    }
+
     /**
      * Admin catalogue view — EVERY product, including drafts and deactivated ones
      * (the public list only returns active products, so drafts used to vanish from

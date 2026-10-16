@@ -47,4 +47,38 @@ public class OrderItem {
 
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal subtotal;
+
+    /**
+     * Whether this line's units were actually taken from inventory. False only
+     * when the payment cleared but the stock had already gone (a STOCK
+     * SHORTFALL) — cancelling such an order must not put back units that were
+     * never taken, or the shop would show stock it doesn't have.
+     */
+    @Column(name = "stock_committed")
+    @Builder.Default
+    private Boolean stockCommitted = Boolean.TRUE;
+
+    @PrePersist
+    void defaultStockCommitted() {
+        if (stockCommitted == null) stockCommitted = Boolean.TRUE;
+    }
+
+    /**
+     * The product's id for the client (the product itself is not serialised) —
+     * "Reorder" and the account page need it. Reading the id of a lazy proxy
+     * does not hit the database.
+     */
+    @Transient
+    @com.fasterxml.jackson.annotation.JsonProperty("productId")
+    public UUID getProductId() {
+        return product == null ? null : product.getId();
+    }
+
+    /** Product page slug for links from "My orders" (null if the product is gone). */
+    @Transient
+    @com.fasterxml.jackson.annotation.JsonProperty("productSlug")
+    public String getProductSlug() {
+        try { return product == null ? null : product.getSlug(); }
+        catch (RuntimeException e) { return null; }   // proxy no longer loadable — not worth failing the response
+    }
 }

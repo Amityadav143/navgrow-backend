@@ -104,6 +104,16 @@ public class OrderController {
         // heavier products can carry a higher shipping base than light ones.
         java.util.List<com.navgrow.service.DeliveryService.DeliveryLine> deliveryLines = new ArrayList<>();
 
+        // Total units asked for per product — the same product sent on two lines
+        // must not slip past the stock check twice.
+        Map<UUID, Integer> wanted = new LinkedHashMap<>();
+        for (OrderItemReq it : req.getItems()) {
+            if (it.getProductId() == null || it.getQuantity() == null || it.getQuantity() < 1) {
+                throw new BadRequestException("Invalid item in the order. Please refresh your cart and try again.");
+            }
+            wanted.merge(it.getProductId(), it.getQuantity(), Integer::sum);
+        }
+
         for (OrderItemReq itemReq : req.getItems()) {
             Product product = productRepo.findById(itemReq.getProductId())
                 .orElseThrow(() -> new ResourceNotFoundException("Product", itemReq.getProductId().toString()));
@@ -120,10 +130,21 @@ public class OrderController {
             }
             deliveryLines.add(new com.navgrow.service.DeliveryService.DeliveryLine(
                 product.getDeliveryCharge(), itemReq.getQuantity()));
-            // Prevent overselling: reject if the requested quantity exceeds available stock.
-            if (product.getStockQty() != null && itemReq.getQuantity() > product.getStockQty()) {
-                throw new BadRequestException("Only " + product.getStockQty()
-                    + " unit(s) of " + product.getName() + " are in stock");
+            // Prevent overselling. Stock that was never set counts as zero (it used
+            // to mean "unlimited", which let customers buy items that weren't there).
+            int inStock = product.getStockQty() == null ? 0 : product.getStockQty();
+            int totalWanted = wanted.getOrDefault(product.getId(), itemReq.getQuantity());
+            if (inStock <= 0) {
+                throw new BadRequestException(product.getName() + " is out of stock. Please remove it from your cart "
+                    + "— or request a quote and we'll source it for you.");
+            }
+            if (totalWanted > inStock) {
+                throw new BadRequestException("Only " + inStock + " unit" + (inStock == 1 ? "" : "s") + " of "
+                    + product.getName() + " left in stock. Please reduce the quantity.");
+            }
+            int moq = product.getMinOrderQty() == null ? 1 : Math.max(1, product.getMinOrderQty());
+            if (totalWanted < moq) {
+                throw new BadRequestException("The minimum order for " + product.getName() + " is " + moq + " units.");
             }
 
             // Catalogue prices are GST-INCLUSIVE. The tax is therefore extracted
@@ -167,7 +188,11 @@ public class OrderController {
         // quantity: base × lineQty × slab(lineQty), summed over lines. The zone
         // quote gives the raw per-unit base charge for the pincode; we apply the
         // per-product formula here so the charge matches the cart/checkout preview.
-        var deliveryQuote = deliveryService.quote(req.getPincode(), subtotal);
+        // The free-delivery threshold is judged on the goods value the buyer sees
+        // (GST-inclusive, before any coupon) — exactly what the checkout sends to
+        // /delivery/check. Passing the taxable subtotal here meant an order shown
+        // with FREE delivery at checkout could be charged delivery on payment.
+        var deliveryQuote = deliveryService.quote(req.getPincode(), subtotal.add(gstAmount));
         if (!deliveryQuote.isServiceable()) {
             throw new BadRequestException(deliveryQuote.getNote() != null
                 ? deliveryQuote.getNote()
@@ -263,19 +288,23 @@ public class OrderController {
         // online. Stock is committed now because the order is already confirmed,
         // unlike a prepaid order which holds no inventory until payment clears.
         if (cod) {
+            // Commit stock first, atomically: if another buyer took the last units a
+            // moment ago, the whole order is rolled back with a clear message instead
+            // of confirming something we can't ship.
+            for (Map.Entry<UUID, Integer> w : wanted.entrySet()) {
+                if (productRepo.takeStock(w.getKey(), w.getValue()) == 0) {
+                    String name = items.stream().filter(i -> i.getProduct() != null && w.getKey().equals(i.getProduct().getId()))
+                        .map(OrderItem::getProductName).findFirst().orElse("An item");
+                    throw new BadRequestException("Sorry — " + name + " just sold out or has fewer units left than you ordered. "
+                        + "Please update your cart.");
+                }
+            }
             // COD orders are confirmed immediately, so the coupon is spent now.
             recordCouponRedemption(appliedCoupon, buyer, order);
             // A tax invoice is issued at the point of sale — assign its number now
             // so the customer's confirmation email and account both show it.
             try { invoiceNumberService.assignIfAbsent(order); }
             catch (Exception e) { log.warn("Invoice number assignment failed for {}: {}", order.getOrderNumber(), e.getMessage()); }
-            for (OrderItem item : order.getItems()) {
-                Product product = item.getProduct();
-                if (product != null && product.getStockQty() != null) {
-                    product.setStockQty(Math.max(0, product.getStockQty() - item.getQuantity()));
-                    productRepo.save(product);
-                }
-            }
             emailService.sendOrderConfirmation(
                 order.getCustomerEmail(), order.getCustomerName(),
                 order.getOrderNumber(), order.getGrandTotal().toPlainString());
@@ -370,6 +399,17 @@ public class OrderController {
                 throw new BadRequestException("Payment verification failed");
             }
 
+            // Claim the payment atomically: if a second confirmation of the same
+            // payment is running alongside this one, only one may take stock,
+            // spend the coupon and send the emails.
+            if (orderRepo.markPaidIfNotAlready(order.getId(), PaymentStatus.PAID) == 0) {
+                return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "orderNumber", order.getOrderNumber(),
+                    "message", "Payment already verified. Order confirmed!"
+                ));
+            }
+
             order.setRazorpayPaymentId(req.getRazorpayPaymentId());
             order.setRazorpaySignature(req.getRazorpaySignature());
             order.setPaymentStatus(PaymentStatus.PAID);
@@ -382,21 +422,21 @@ public class OrderController {
 
             // Spend the coupon only now that payment has actually cleared, so an
             // abandoned/unpaid online order never burns the customer's one use.
-            if (order.getCouponCode() != null && order.getUser() != null) {
-                couponRepo.findByCodeIgnoreCase(order.getCouponCode())
-                    .ifPresent(c -> recordCouponRedemption(c, order.getUser(), order));
+            try {
+                if (order.getCouponCode() != null && order.getUser() != null) {
+                    couponRepo.findByCodeIgnoreCase(order.getCouponCode())
+                        .ifPresent(c -> recordCouponRedemption(c, order.getUser(), order));
+                }
+            } catch (Exception e) {
+                log.warn("Coupon redemption record failed for {}: {}", order.getOrderNumber(), e.getMessage());
             }
 
-            // Decrement stock for each purchased item now that payment has succeeded.
-            // Done after payment (not at order creation) so abandoned/unpaid orders
-            // don't hold inventory. Stock never goes below zero.
-            for (OrderItem item : order.getItems()) {
-                Product product = item.getProduct();
-                if (product != null && product.getStockQty() != null) {
-                    int remaining = product.getStockQty() - item.getQuantity();
-                    product.setStockQty(Math.max(0, remaining));
-                    productRepo.save(product);
-                }
+            // Take stock now that payment has succeeded (abandoned/unpaid orders never
+            // hold inventory). Atomic per product: if another buyer took the last
+            // units between checkout and payment, the money is already captured, so
+            // the order stays confirmed but is FLAGGED for the team (source or refund).
+            if (!takeStockForOrder(order, "at payment time (already paid)").isEmpty()) {
+                orderRepo.save(order);
             }
 
             // Send confirmation email async
@@ -437,9 +477,12 @@ public class OrderController {
             @AuthenticationPrincipal UserDetails ud,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
-        return ResponseEntity.ok(
-            orderRepo.findByCustomerEmailOrderByCreatedAtDesc(ud.getUsername(), pageable));
+        // Sorting comes from the method name; keep the page request unsorted.
+        Pageable pageable = PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 100));
+        var me = userRepo.findByEmail(ud.getUsername());
+        return ResponseEntity.ok(me.isPresent()
+            ? orderRepo.findByUser_IdOrCustomerEmailIgnoreCaseOrderByCreatedAtDesc(me.get().getId(), ud.getUsername(), pageable)
+            : orderRepo.findByCustomerEmailOrderByCreatedAtDesc(ud.getUsername(), pageable));
     }
 
     // ── Public order tracking (by order number, no auth) ─────────────────────
@@ -510,10 +553,22 @@ public class OrderController {
     public ResponseEntity<Page<Order>> listOrders(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestParam(required = false) OrderStatus status) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+            @RequestParam(required = false) OrderStatus status,
+            // The admin search box (order no., name, email or phone) — it was sent
+            // but ignored, so searching never filtered anything.
+            @RequestParam(required = false) String q) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(Math.max(1, size), 100);
+        String term = q == null ? "" : q.trim();
+        if (!term.isEmpty()) {
+            Pageable unsorted = PageRequest.of(safePage, safeSize);   // ORDER BY is in the query
+            return ResponseEntity.ok(status != null
+                ? orderRepo.searchByStatus(term, status, unsorted)
+                : orderRepo.searchAll(term, unsorted));
+        }
+        Pageable pageable = PageRequest.of(safePage, safeSize, Sort.by("createdAt").descending());
         return ResponseEntity.ok(status != null
-            ? orderRepo.findByStatusOrderByCreatedAtDesc(status, pageable)
+            ? orderRepo.findByStatusOrderByCreatedAtDesc(status, PageRequest.of(safePage, safeSize))
             : orderRepo.findAll(pageable));
     }
 
@@ -537,22 +592,26 @@ public class OrderController {
         OrderStatus previous = order.getStatus();
         boolean statusChanged = previous != status;
 
-        // Stock was committed for this order if payment cleared (online) or it is a
-        // confirmed COD order (COD commits stock at placement). If such an order is
-        // now being CANCELLED, put the reserved units back so inventory isn't lost.
-        boolean stockWasCommitted =
-            order.getPaymentStatus() == PaymentStatus.PAID
-            || ("COD".equalsIgnoreCase(order.getPaymentMethod())
-                && previous != OrderStatus.PENDING && previous != OrderStatus.CANCELLED);
-        if (status == OrderStatus.CANCELLED && previous != OrderStatus.CANCELLED && stockWasCommitted) {
+        // Inventory follows the order. An order holds stock while it is active and
+        // either paid online or a confirmed COD order (COD takes stock at placement).
+        //  • leaving that state (e.g. CANCELLED) puts its units back;
+        //  • entering it (e.g. re-opening an order cancelled by mistake, or
+        //    confirming a pending COD order) takes them again — it used to be
+        //    skipped, so the shop showed stock that was already promised.
+        boolean heldBefore = holdsStock(order, previous);
+        boolean heldAfter  = holdsStock(order, status);
+        if (heldBefore && !heldAfter) {
             for (OrderItem item : order.getItems()) {
                 Product product = item.getProduct();
-                if (product != null && product.getStockQty() != null) {
-                    product.setStockQty(product.getStockQty() + item.getQuantity());
-                    productRepo.save(product);
+                // Skip lines that never took stock (paid during a stock shortfall).
+                if (product != null && item.getQuantity() != null && item.getQuantity() > 0
+                        && !Boolean.FALSE.equals(item.getStockCommitted())) {
+                    productRepo.returnStock(product.getId(), item.getQuantity());
                 }
             }
-            log.info("Restored stock for cancelled order {}", order.getOrderNumber());
+            log.info("Restored stock for order {} ({} → {})", order.getOrderNumber(), previous, status);
+        } else if (!heldBefore && heldAfter) {
+            takeStockForOrder(order, "when the order was moved to " + status);
         }
 
         order.setStatus(status);
@@ -572,6 +631,51 @@ public class OrderController {
             }
         }
         return ResponseEntity.ok(saved);
+    }
+
+    /**
+     * Does an order in this status hold stock? Paid online orders hold it until
+     * cancelled; COD orders while confirmed/active (they take it at placement);
+     * unpaid online orders never do (stock is taken when payment clears).
+     */
+    private static boolean holdsStock(Order order, OrderStatus status) {
+        if (status == null || status == OrderStatus.CANCELLED) return false;
+        if (order.getPaymentStatus() == PaymentStatus.PAID) return true;
+        return "COD".equalsIgnoreCase(order.getPaymentMethod()) && status != OrderStatus.PENDING;
+    }
+
+    /**
+     * Takes each product's units for this order, atomically per product. If a
+     * product no longer has enough, its lines are marked as not holding stock and
+     * the order is flagged "[STOCK SHORTFALL]" for the team (source the items or
+     * refund) — the order itself is never blocked. Returns the shortfalls.
+     */
+    private List<String> takeStockForOrder(Order order, String when) {
+        Map<UUID, Integer> qty = new LinkedHashMap<>();
+        Map<UUID, String> names = new HashMap<>();
+        for (OrderItem item : order.getItems()) {
+            Product product = item.getProduct();
+            if (product == null || item.getQuantity() == null || item.getQuantity() <= 0) continue;
+            qty.merge(product.getId(), item.getQuantity(), Integer::sum);
+            names.putIfAbsent(product.getId(), item.getProductName());
+        }
+        List<String> shortfalls = new ArrayList<>();
+        for (Map.Entry<UUID, Integer> e : qty.entrySet()) {
+            boolean taken = productRepo.takeStock(e.getKey(), e.getValue()) > 0;
+            if (!taken) shortfalls.add(names.get(e.getKey()) + " × " + e.getValue());
+            for (OrderItem item : order.getItems()) {
+                if (item.getProduct() != null && e.getKey().equals(item.getProduct().getId())) {
+                    item.setStockCommitted(taken);
+                }
+            }
+        }
+        if (!shortfalls.isEmpty()) {
+            String flag = "[STOCK SHORTFALL] Not enough stock " + when + " for: "
+                + String.join(", ", shortfalls) + ". Source the items (backorder) or refund.";
+            order.setNotes(order.getNotes() == null || order.getNotes().isBlank() ? flag : order.getNotes() + "\n" + flag);
+            log.warn("Order {} {}", order.getOrderNumber(), flag);
+        }
+        return shortfalls;
     }
 
     /**

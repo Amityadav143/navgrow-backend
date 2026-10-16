@@ -25,9 +25,36 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     Optional<Order> findByOrderNumber(String orderNumber);
     Optional<Order> findByRazorpayOrderId(String razorpayOrderId);
     Page<Order> findByCustomerEmailOrderByCreatedAtDesc(String email, Pageable pageable);
+
+    /** "My orders": placed while signed in to this account OR with its email. */
+    Page<Order> findByUser_IdOrCustomerEmailIgnoreCaseOrderByCreatedAtDesc(UUID userId, String email, Pageable pageable);
     Page<Order> findByStatusOrderByCreatedAtDesc(OrderStatus status, Pageable pageable);
+
+    /** Admin search: order number, customer name, email or phone (status bound as a parameter). */
+    @Query("SELECT o FROM Order o WHERE LOWER(o.orderNumber) LIKE LOWER(CONCAT('%', :q, '%')) "
+         + "OR LOWER(o.customerEmail) LIKE LOWER(CONCAT('%', :q, '%')) "
+         + "OR LOWER(o.customerName) LIKE LOWER(CONCAT('%', :q, '%')) "
+         + "OR o.customerPhone LIKE CONCAT('%', :q, '%') ORDER BY o.createdAt DESC")
+    Page<Order> searchAll(@Param("q") String q, Pageable pageable);
+
+    @Query("SELECT o FROM Order o WHERE o.status = :status AND (LOWER(o.orderNumber) LIKE LOWER(CONCAT('%', :q, '%')) "
+         + "OR LOWER(o.customerEmail) LIKE LOWER(CONCAT('%', :q, '%')) "
+         + "OR LOWER(o.customerName) LIKE LOWER(CONCAT('%', :q, '%')) "
+         + "OR o.customerPhone LIKE CONCAT('%', :q, '%')) ORDER BY o.createdAt DESC")
+    Page<Order> searchByStatus(@Param("q") String q, @Param("status") OrderStatus status, Pageable pageable);
     long countByStatus(OrderStatus status);
     long countByPaymentStatus(PaymentStatus paymentStatus);
+
+    /**
+     * Marks the order PAID only if it isn't already, in one statement. Two
+     * confirmations of the same payment (double submit / retry) can both pass a
+     * plain "is it paid yet?" check; this lets exactly one of them run the paid
+     * flow (stock, coupon, emails). Status is bound as a parameter (see below).
+     */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE Order o SET o.paymentStatus = :paid WHERE o.id = :id "
+         + "AND (o.paymentStatus IS NULL OR o.paymentStatus <> :paid)")
+    int markPaidIfNotAlready(@Param("id") UUID id, @Param("paid") PaymentStatus paid);
 
     /**
      * NOTE: the payment status MUST be bound as a query parameter, never written

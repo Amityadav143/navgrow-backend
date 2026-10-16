@@ -38,4 +38,18 @@ public interface ProductRepository extends JpaRepository<Product, UUID>,
 
     // Lightweight list for the dynamic sitemap (all active products).
     java.util.List<Product> findByActiveTrue();
+
+    /**
+     * Atomically takes {@code qty} units — succeeds (returns 1) only if at least
+     * that many remain, so two buyers can never both get the last unit. A NULL
+     * stock counts as zero. Must run inside a transaction.
+     */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE Product p SET p.stockQty = p.stockQty - :qty WHERE p.id = :id AND p.stockQty >= :qty")
+    int takeStock(@Param("id") UUID id, @Param("qty") int qty);
+
+    /** Puts units back (e.g. a cancelled order). A NULL stock is treated as zero. */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE Product p SET p.stockQty = COALESCE(p.stockQty, 0) + :qty WHERE p.id = :id")
+    int returnStock(@Param("id") UUID id, @Param("qty") int qty);
 }

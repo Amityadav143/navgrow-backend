@@ -122,6 +122,16 @@ public class StockNotificationController {
     @PostMapping("/notify")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER') or hasAuthority('PERM_PRODUCTS')")
     public ResponseEntity<Map<String, Object>> notifyRestocked(@RequestParam String productSlug) {
+        // Never tell customers something is back when it isn't — that used to email
+        // everyone (and close their requests) even if the product was still sold out.
+        var product = productRepo.findBySlug(productSlug.trim()).orElse(null);
+        int stock = product == null || product.getStockQty() == null ? 0 : product.getStockQty();
+        int moq = product == null || product.getMinOrderQty() == null ? 1 : Math.max(1, product.getMinOrderQty());
+        if (product == null || !product.isActive() || stock < moq) {
+            throw new com.navgrow.exception.BadRequestException(
+                (product == null ? "This product" : product.getName()) + " isn't available to buy yet (stock: " + stock
+                + "). Restock it first, then notify the customers who are waiting.");
+        }
         var waiting = repo.findByProductSlugAndNotifiedFalse(productSlug.trim());
         int sent = 0;
         String productName = waiting.stream().map(StockNotification::getProductName)
